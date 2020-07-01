@@ -1,1 +1,1225 @@
-test
+script_version('0.1 beta')
+
+require 'lib.moonloader'
+local inicfg = require 'inicfg'
+local vkeys = require 'vkeys'
+local font_flag = require('moonloader').font_flag
+local encoding = require 'encoding'
+local https = require 'ssl.https'
+local downloadStatus = require('moonloader').download_status
+levent, event = pcall(require, 'lib.samp.events')
+encoding.default = 'CP1251'
+u8 = encoding.UTF8
+
+local font = renderCreateFont('Arial', 8.2, font_flag.BOLD + font_flag.SHADOW)
+
+local ini = inicfg.load({
+	vegetation = {},
+	fauna = {},
+	store = {
+		water = 0,
+		wheat = 0,
+		potato = 0,
+		corn = 0,
+		hemp = 0
+	},
+	another = {}
+}, 'farming.ini')
+
+local global = {
+	vegetation = {},
+	fauna = {},
+	store = {
+		all = 0,
+		wheat = 0,
+		potato = 0,
+		corn = 0,
+		hemp = 0
+	},
+	another = {}
+}
+
+local qualityValue = {[1] = '{6495ED}Низкое', [2] = 'Среднее', [3] = '{CD5C5C}Высокое'}
+
+function main()
+	if not isSampLoaded() or not isSampfuncsLoaded() then return end
+	while not isSampAvailable() do wait(100) end
+	
+	autoUpdate('https://raw.githubusercontent.com/skezz-perry/farm/master/version', 'https://raw.githubusercontent.com/skezz-perry/farm/master/project')
+
+	sampRegisterChatCommand('coords', function()
+		local x, y, z = getCharCoordinates(playerPed)
+		setClipboardText(x .. ', ' .. y .. ', ' .. z)
+	end)
+
+	sampRegisterChatCommand('vcreate', function(parametrs)
+		if loadfarm then
+			if string.match(parametrs, '(%S+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)') then
+				createVegs(parametrs)
+			else
+				addChat('Введите необходимые параметры для /vcreate [название] [модель] [fix] [kd1] [kd2] [kd3] [day1] [day2].')
+			end
+		else
+			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+		end
+	end)
+	
+	sampRegisterChatCommand('vscreate', function(parametrs)
+		if loadfarm then
+			if string.match(parametrs, '(%d+) (%d+)') then
+				local index, distance = string.match(parametrs, '(%d+) (%d+)')
+				local index, distance = tonumber(index), tonumber(distance)
+				
+				if global.vegetation[index] then
+					if distance >= 3 then
+						local x1, y1 = getCoordinates()
+						local x2, y2, z = global.vegetation[index].position.x, global.vegetation[index].position.y
+						
+						local deltaX, deltaY = math.floor((x1 - x2) / distance), math.floor((y1 - y2) / distance)
+						
+						for i = 0, deltaX do
+							local x = x2 + distance * i
+		
+							for _i = 0, deltaY do
+								local y = y2 + distance * _i
+								
+								if not clearRadius(x, y, z) then
+									if not (distance * i == 0 and distance * _i == 0) then
+										table.insert(global.vegetation, #ini.vegetation + 1, global.vegetation[#global.vegetation])
+										global.vegetation[#global.vegetation].position.x = x
+										global.vegetation[#global.vegetation].position.y = y
+										local quality = math.random(1, 99)
+										if quality > 40 and quality < 50 then quality = 3
+										elseif quality > 0 and quality <= 40 then quality = 2
+										else quality = 1 end
+										global.vegetation[#global.vegetation].quality = quality
+										saveVegetation(#global.vegetation, true)
+									end
+								end
+							end
+						end
+						
+						inicfg.save(ini, 'farming.ini')
+						addChat('Локация была обновлена, для загрузки введите /loadfarm.')
+						thisScript():reload()
+					else
+						addChat('Расстояние между растениями должно быть не менее 3 метров.')
+					end
+				else
+					addChat('Данного растения не существует, проверьте правильность ID.')
+				end
+			else
+				addChat('Введите необходимые параметры для /vscreate [ид растения] [дистанция между растениями].')
+			end
+		else
+			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+		end
+	end)
+	
+	sampRegisterChatCommand('vdelete', function(parametrs)
+		if string.match(parametrs, '(%d+) (%d+)') then
+			local _index, last = string.match(parametrs, '(%d+) (%d+)')
+			local _index, last = tonumber(_index), tonumber(last)
+			
+			for index = _index, last do
+				if index then
+					if global.vegetation[index] then
+						if global.vegetation[index].handle then
+							if doesObjectExist(global.vegetation[index].handle) then
+								deleteObject(global.vegetation[index].handle)
+							end
+						end
+						
+						global.vegetation[index] = nil
+						ini.vegetation[index] = nil
+					end
+				end
+			end
+			
+			inicfg.save(ini, 'farming.ini')
+			addChat('Растения успешно удалены.')
+		elseif string.match(parametrs, '(%d+)') then
+			local index = tonumber(string.match(parametrs, '(%d+)'))
+			if index then
+				if global.vegetation[index] then
+					if global.vegetation[index].handle then
+						if doesObjectExist(global.vegetation[index].handle) then
+							deleteObject(global.vegetation[index].handle)
+						end
+					end
+					
+					global.vegetation[index] = nil
+					ini.vegetation[index] = nil
+					inicfg.save(ini, 'farming.ini')
+					addChat('Растение успешно удалено.')
+				else
+					addChat('Данное растение не существует, проверьте правильность введённого ID.')
+				end
+			end
+		else
+			addChat('Введите необходимые параметры для /vdelete [ид растения] (последний ид).')
+		end
+	end)
+	
+	sampRegisterChatCommand('vsave', function(index)
+		local index = tonumber(index)
+		if index then
+			saveVegetation(index)
+		else
+			addChat('Введите необходимые параметры для /vsave [ид растения].')
+		end
+	end)
+	
+	sampRegisterChatCommand('loadfarm', function()
+		if not loadfarm then
+			for index, value in pairs(ini.vegetation) do
+				local result = convertStringToTable(value)
+				if result then global.vegetation[index] = result
+				else addChat('Произошла ошибка при попытке подгрузить растение {00CC66}' .. index .. '{e6e6fa}.') end
+			end
+			
+			for index, value in pairs(ini.another) do
+				local result = convertStringToTable(value)
+				if result then 
+					global.another[index] = result
+					local b = global.another[index]
+					global.another[index].handle = createObject(b.model, b.position.x, b.position.y, b.position.z)
+					setObjectRotation(global.another[index].handle, b.rotation.x, b.rotation.y, b.rotation.z)
+					--setObjectCollision(global.another[index].handle, false)
+				else addChat('Произошла ошибка при попытке подгрузить объект {00CC66}' .. index .. '{e6e6fa}.') end
+			end
+			
+			loadfarm = true
+			addChat('Локация загружена.')
+		else
+			addChat('Локация уже была загружена.')
+		end
+	end)
+	
+	sampRegisterChatCommand('reloadfarm', function()
+		addChat('Скрипт перезагружен.')
+		thisScript():reload()
+	end)
+	
+	sampRegisterChatCommand('anims', function(id)
+		if tonumber(id) then
+			playAnim(id)
+		end
+	end)
+	
+	sampRegisterChatCommand('ocreate', function(parametrs)
+		if loadfarm then
+			if tonumber(parametrs) then
+				if not isCharSittingInAnyCar(playerPed) then
+					local x, y, z = getCharCoordinates(playerPed)
+					local object = parametrs
+					handle = createObject(object, x + 1, y + 1, z)
+
+					--setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
+					table.insert(global.another, {
+						model = object,
+						handle = handle,
+						position = {
+							x = x + 1,
+							y = y + 1,
+							z = z
+						},
+						rotation = {
+							x = 0,
+							y = 0,
+							z = 0
+						}
+					})
+					
+					addChat(string.format('Вы создали объект, его уникальный ID {00CC66}%d{e6e6fa} [%d].', #global.another, handle))
+					saveObject(#global.another, true)
+				else
+					addChat('Вы не должны находится в транспорте.')
+				end
+			else
+				addChat('Введите необходимые параметры для /ocreate [ид модели].')
+			end
+		else
+			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+		end
+	end)
+	
+	sampRegisterChatCommand('odelete', function(id)
+		if tonumber(id) then
+			if global.another[tonumber(id)] then
+				if doesObjectExist(global.another[tonumber(id)].handle) then deleteObject(global.another[tonumber(id)].handle) end
+				ini.another[tonumber(id)] = nil
+				global.another[tonumber(id)] = nil
+				inicfg.save(ini, 'farming.ini')
+				addChat('Объект успешно удалён.')
+			else
+				addChat('Данный объект не существует, проверьте правильность введённого ID.')
+			end
+		else
+			addChat('Введите необходимые параметры для /odelete [ид модели].')
+		end
+	end)
+	
+	sampRegisterChatCommand('oedit', function(id)
+		if not objectValue then
+			if string.match(id, '(%d+) (%S+), (%S+)') then
+				if not isCharSittingInAnyCar(playerPed) then
+					local id, position, rotation = string.match(id, '(%d+) (.+), (.+)')
+					if tonumber(position) and tonumber(rotation) then
+						if global.another[tonumber(id)] then
+							objectValue = {tonumber(id), tonumber(position), tonumber(rotation)}
+							addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
+						else
+							addChat('Данный объект не существует, проверьте правильность введённого ID.')
+						end
+					else
+						addChat('Введите необходимые параметры для /oedit [ид объекта] (скорость движения), (скорость вращения).')
+					end
+				else
+					addChat('Вы не должны находится в транспорте.')
+				end
+			elseif tonumber(id) then
+				if not isCharSittingInAnyCar(playerPed) then
+					if global.another[tonumber(id)] then
+						objectValue = {tonumber(id), 0.01, 0.5}
+						addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
+					else
+						addChat('Данный объект не существует, проверьте правильность введённого ID.')
+					end
+				else
+					addChat('Вы не должны находится в транспорте.')
+				end
+			else
+				addChat('Введите необходимые параметры для /oedit [ид объекта] (скорость движения), (скорость вращения).')
+			end
+		else
+			saveObject(objectValue[1])
+			objectValue = nil
+		end
+	end)
+	
+	sampRegisterChatCommand('orender', function()
+		objectRender = not objectRender
+		addChat('Вы ' .. (objectRender and '{00CC66}включили' or '{B22222}выключили') .. '{e6e6fa} отображение идентификаторов объектов.')
+	end)
+	
+	sampRegisterChatCommand('mrender', function()
+		render_menu = not render_menu
+	end)
+	
+	lua_thread.create(renderText)
+	lua_thread.create(editObject)
+	while true do wait(0) end
+end
+
+function editObject()
+	while true do wait(0)
+		if objectValue then
+			local point, move1, move2 = objectValue[1], objectValue[2], objectValue[3]
+			local object = global.another[point].handle
+			
+			if isKeyDown(0x02) then
+				if isKeyDown(0x64) then
+					global.another[point].rotation.x = global.another[point].rotation.x + move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				elseif isKeyDown(0x66) then
+					global.another[point].rotation.x = global.another[point].rotation.x - move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				elseif isKeyDown(0x62) then
+					global.another[point].rotation.y = global.another[point].rotation.y + move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				elseif isKeyDown(0x68) then
+					global.another[point].rotation.y = global.another[point].rotation.y - move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				elseif isKeyDown(0x20) then
+					global.another[point].rotation.z = global.another[point].rotation.z + move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				elseif isKeyDown(0x12) then
+					global.another[point].rotation.z = global.another[point].rotation.z - move2
+					setObjectRotation(object, global.another[point].rotation.x, global.another[point].rotation.y, global.another[point].rotation.z)
+				end
+			else
+				if isKeyDown(0x64) then
+					global.another[point].position.x = global.another[point].position.x + move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				elseif isKeyDown(0x66) then
+					global.another[point].position.x = global.another[point].position.x - move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				elseif isKeyDown(0x62) then
+					global.another[point].position.y = global.another[point].position.y + move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				elseif isKeyDown(0x68) then
+					global.another[point].position.y = global.another[point].position.y - move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				elseif isKeyDown(0x20) then
+					global.another[point].position.z = global.another[point].position.z + move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				elseif isKeyDown(0x12) then
+					global.another[point].position.z = global.another[point].position.z - move1
+					setObjectCoordinates(object, global.another[point].position.x, global.another[point].position.y, global.another[point].position.z)
+				end
+			end
+			
+			--[[
+				+x = 0x64 (num4)
+				-x = 0x66 (num6)
+				
+				+y = 0x68 (num8)
+				-y = 0x62 (num2)
+				
+				+z = 0x20 (space)
+				-z = 0x12 (alt)
+			--]]
+		end
+	end
+end
+
+function renderText()
+	while true do wait(0)
+		if not isCharDead(playerPed) then
+			local px, py, pz = getCoordinates()
+			
+			--printStringNow(px .. ' ' .. py .. ' ' .. pz, 100)
+			
+			for index, value in pairs(global.vegetation) do
+				if type(value) == 'table' then
+					local x, y, z = value.position.x, value.position.y, value.position.z
+					local distance = getDistanceBetweenCoords3d(px, py, pz, x, y, z)
+
+					if distance < 100 then
+						if not value.handle then
+							global.vegetation[index].handle = createObject(value.model, x, y, z - value.fix)
+						end
+						
+						if distance < 7 then
+							if isPointOnScreen(x, y, z) then
+								local sx, sy = convert3DCoordsToScreen(x, y, z)
+								local buffer = checkValidityDate(value.water)
+								local result = buffer and buffer or 0
+								local status, quest = nil, ''
+								
+								local name = string.format('Название – {B3EE3A}%s{e6e6fa} [%d]', value.name, index)
+								local quality = string.format('Качество – {B3EE3A}%s{e6e6fa}', qualityValue[value.quality])
+								local date = string.format('Дата посадки – {FFCD00}%s.%s.%s{e6e6fa}', value.date.d, value.date.m, value.date.y)
+								local water = string.format('Последний полив был {FFCD00}%s{e6e6fa} дней назад', result)
+								
+								if result >= value.water.kd1 and result < value.water.kd2 then
+									status = string.format('Состояние – {4876FF}Необходимо полить{e6e6fa}')
+									quest = 'Чтобы полить растение нажмите {00CC66}RButt + Alt'
+									if distance < 1.5 then
+										if wasKeyPressed(vkeys.VK_MENU) and isKeyDown(VK_RBUTTON) then
+											if isKeyCheckAvailable() then 
+												wateredVegetation(index, value, result)
+											end
+										end
+									end
+								elseif result >= value.water.kd2 then
+									status = string.format('Состояние – {B22222}Растение засохло{e6e6fa}')
+									quest = 'Для уничтожения растения нажмите {00CC66}RButt + Alt'
+									
+									if distance < 1.5 then
+										if wasKeyPressed(vkeys.VK_MENU) and isKeyDown(VK_RBUTTON) then
+											if isKeyCheckAvailable() then 
+												destroyVegetation(index, value)
+											end
+										end
+									end
+								else
+									local buffer = checkValidityDate(value.date)
+									local result = buffer and buffer or 0
+									if result >= value.water.kd3 then
+										status = string.format('Состояние – {32CD32}Готово к сбору{e6e6fa}')
+										quest = 'Для сбора растения нажмите {00CC66}RButt + Alt'
+										
+										if distance < 1.5 then
+											if wasKeyPressed(vkeys.VK_MENU) and isKeyDown(VK_RBUTTON) then
+												if isKeyCheckAvailable() then 
+													takeVegetation(index, value)
+												end
+											end
+										end
+									else
+										status = string.format('Состояние – {FFFACD}Нормальное{e6e6fa}')
+									end
+								end
+
+								local text = string.format('%s\n%s\n%s\n%s\n\n%s\n%s', name, quality, status, date, water, quest)
+								local text = u8:decode(text)
+								renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
+							end
+						end
+					end
+				end
+			end
+			
+			--
+			local ksx, ksy, ksz = 1045.9521484375, -359.67855834961, 74.4
+			
+			local distance = getDistanceBetweenCoords3d(px, py, pz, ksx, ksy, ksz)
+			if distance < 10 then
+				if isPointOnScreen(ksx, ksy, ksz) then
+					local sx, sy = convert3DCoordsToScreen(ksx, ksy, ksz)
+					local text = string.format(
+					'Пшеница – {CD5C5C}%0.2f{e6e6fa} кг\nКукуруза – {CD5C5C}%0.2f{e6e6fa} кг\nКартофель – {CD5C5C}%0.2f{e6e6fa} кг\nКонопля – {CD5C5C}%0.2f{e6e6fa} кг'
+					, ini.store.wheat, ini.store.corn, ini.store.potato, ini.store.hemp)
+					
+					if distance < 4 then
+						if not isCharSittingInAnyCar(playerPed) then
+							if not global.store.work then
+								text = text .. '\n\nДля складирования нажмите {00CC66}RButt + Alt'
+								if wasKeyPressed(vkeys.VK_MENU) and isKeyDown(VK_RBUTTON) then
+									if isKeyCheckAvailable() then
+										putVegetation(index, value)
+									end
+								end
+							end
+						end
+					end
+					
+					local text = u8:decode(text)
+					renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
+				end
+			end
+			
+			local wsx, wsy, wsz = 1032.4544677734, -289.4255065918, 73.9921875
+			local distance = getDistanceBetweenCoords3d(px, py, pz, wsx, wsy, wsz)
+			if distance < 20 then
+				if isPointOnScreen(wsx, wsy, wsz) then
+					local sx, sy = convert3DCoordsToScreen(wsx, wsy, wsz)
+					
+					local text = string.format('Объём воды – {6495ED}%0.2f{e6e6fa} л', ini.store.water)
+					local text = u8:decode(text)
+					renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
+				end
+			end
+			
+			if ini.store.water < 500 then
+				if distance < 200 then
+					local second = tonumber(os.date('%S'))
+					if second then
+						if math.fmod(second, 30) == 0 then
+							if second ~= lastSecond then
+								lastSecond = second
+								ini.store.water = ini.store.water + math.random(4, 8) + math.random(0, 99) * 0.01
+								inicfg.save(ini, 'farming.ini')
+							end
+						end
+					end
+				end
+			end
+			
+			if objectRender then
+				for index, v in pairs(global.another) do
+					local distance = getDistanceBetweenCoords3d(px, py, pz, v.position.x, v.position.y, v.position.z)
+					if distance < 10 then
+						if isPointOnScreen(v.position.x, v.position.y, v.position.z) then
+							local sx, sy = convert3DCoordsToScreen(v.position.x, v.position.y, v.position.z)
+							renderFontDrawText(font, 'ID ' .. tostring(index), sx, sy, 0xFFFFFFFF)
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+function createVegs(parametrs)
+	if not isCharSittingInAnyCar(playerPed) then
+		local x, y, z = getCharCoordinates(playerPed)
+				
+		if not clearRadius(x, y, z) then
+			local name, model, fix, kd1, kd2, kd3, day, day1 = string.match(parametrs, '(%S+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)')
+			local quality = math.random(1, 99)
+			if quality > 40 and quality < 50 then
+				quality = 3
+			elseif quality > 0 and quality <= 40 then
+				quality = 2
+			else
+				quality = 1
+			end
+			
+			table.insert(global.vegetation, #ini.vegetation + 1, {
+				name = u8(name),
+				model = model,
+				quality = quality,
+				handle = nil,
+				fix = tonumber(fix),
+				position = {
+					x = x,
+					y = y,
+					z = z
+				},
+				water = {
+					d = day and day or os.date('%d'),
+					m = os.date('%m'),
+					y = os.date('%Y'),
+					kd1 = tonumber(kd1),
+					kd2 = tonumber(kd2),
+					kd3 = tonumber(kd3)
+				},
+				date = {
+					d = day1 and day1 or os.date('%d'),
+					m = os.date('%m'),
+					y = os.date('%Y')
+				}
+			})
+					
+			saveVegetation(#global.vegetation)
+		else
+			addChat('Неподалеку уже находится растение, найдите другое место.')
+		end
+	else
+		addChat('Вы не должны находится в транспорте.')
+	end
+end
+
+function playAnim(id)
+	if tonumber(id) then
+		local list = {
+			[1] = function() -- СБОР РАСТЕНИЙ
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then
+					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'BOMBER', 'BOM_Plant', false, false, false, false, 264192})
+				end
+			end,
+			[2] = function() -- ПОЛИВ
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then
+					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'BAR', 'Barserve_bottle', false, false, false, false, 134481920})
+				end
+			end,
+			[3] = function() -- СКЛАДИРОВАНИЕ
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then
+					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'CARRY', 'putdwn105', false, false, false, false, 264192})
+				end
+			end,
+			[4] = function() -- CБИВ
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then
+					emul_rpc('onClearPlayerAnimation', {tonumber(id)})
+				end
+			end
+			
+		}
+		
+		if list[tonumber(id)] then
+			list[tonumber(id)]()
+		end
+	end
+end
+
+function putVegetation(index, value)
+	lua_thread.create(function()
+		if not global.store.work then
+			global.store.work = true
+			if global.store.all > 0 then
+				for index, value in pairs(ini.store) do
+					if index ~= 'water' then
+						ini.store[index] = ini.store[index] + global.store[index]
+						global.store[index] = 0
+					end
+				end
+				
+				lockPlayerControl(true)
+				playAnim(3) wait(300) playAnim(4)
+				lockPlayerControl(false)
+				addChat(string.format('Вы успешно складировали {00CC66}%0.2f{e6e6fa} кг продуктов на склад.', global.store.all))
+				global.store.all = 0
+				inicfg.save(ini, 'farming.ini')
+			else
+				addChat('У вас ничего нет.')
+			end global.store.work = nil
+		end
+	end)
+end
+
+function destroyVegetation(index, value)
+	lua_thread.create(function()
+		if not global.vegetation[index].work then
+			if not isCharSittingInAnyCar(playerPed) then
+				global.vegetation[index].work = true
+				
+				printStyledString('~r~destroy~w~ the ~g~plant', 5700, 4)
+				lockPlayerControl(true)
+				playAnim(1) wait(2700) playAnim(1) wait(2700) playAnim(3) wait(300) playAnim(4)
+				lockPlayerControl(false)
+				
+				addChat('Вы убрали это растение.')
+				if value.handle then
+					if doesObjectExist(value.handle) then
+						deleteObject(value.handle)
+					end
+				end
+				
+				global.vegetation[index] = nil
+				ini.vegetation[index] = nil
+				inicfg.save(ini, 'farming.ini')
+			end
+		end
+	end)
+end
+
+function wateredVegetation(index, value, result)
+	lua_thread.create(function()
+		if not global.vegetation[index].work then
+			if not isCharSittingInAnyCar(playerPed) then
+				local mass = 1 + result + value.quality
+				
+				if mass <= ini.store.water then
+					ini.store.water = ini.store.water - mass
+					global.vegetation[index].work = true
+					lockPlayerControl(true)
+					printStyledString('~b~watering~w~ the ~g~plant', 5800, 4) playAnim(2) 
+					
+					local handle = createObject(18740, value.position.x, value.position.y, value.position.z - 6.3)
+					wait(5500) deleteObject(handle)
+					wait(300) playAnim(4)
+					lockPlayerControl(false)
+				
+					addChat('Растение было полито.')
+					global.vegetation[index].water = {
+						d = os.date('%d'), m = os.date('%m'), y = os.date('%Y'),
+						kd1 = value.water.kd1, kd2 = value.water.kd2, kd3 = value.water.kd3
+					}
+					global.vegetation[index].work = nil
+					saveVegetation(index)
+				else
+					addChat(string.format('Недостаточный объём воды в водонапорной башне, для полива требуется {6495ED}%d{e6e6fa} л.', mass))
+				end
+			else
+				addChat('Вы не должны находится в транспорте.')
+			end
+		end
+	end)
+end
+
+function takeVegetation(index, value)
+	lua_thread.create(function()
+		local mass = 1 * value.quality + math.random(1, 99) * 0.01
+		if value.quality == 3 then mass = mass + 3 + math.random(1, 99) * 0.01 end
+		local convert = {['Пшеница'] = 'wheat', ['Картофель'] = 'potato', ['Кукуруза'] = 'corn', ['Конопля'] = 'hemp'}
+													
+		if convert[value.name] then
+			local limit = 15
+			if isCharSittingInAnyCar(playerPed) then
+				limit = 150
+			end
+			
+			if not global.vegetation[index].work then
+				if global.store.all + mass < limit then
+					global.vegetation[index].work = true
+					global.store.all = global.store.all + mass
+					global.store[convert[value.name]] = global.store[convert[value.name]] + mass
+					
+					
+					printStyledString('~y~collect~w~ the ~g~plant', 5700, 4)
+					lockPlayerControl(true)
+					if not isCharSittingInAnyCar(playerPed) then
+						playAnim(1) wait(2700) playAnim(1) wait(2700) playAnim(3) wait(300) playAnim(4)
+					else wait(5700) end lockPlayerControl(false)
+					
+					addChat(string.format(
+					'Вы собрали {00CC66}%0.2f{e6e6fa} кг растения {9370DB}%s{e6e6fa}. Всего вы собрали {00CC66}%0.2f{e6e6fa} кг.', 
+					mass, value.name, global.store.all))
+					
+					if value.handle then
+						if doesObjectExist(value.handle) then
+							deleteObject(value.handle)
+						end
+					end
+					
+					global.vegetation[index] = nil
+					ini.vegetation[index] = nil
+					inicfg.save(ini, 'farming.ini')
+				else
+					addChat(string.format('Вы не можете унести более {00CC66}%0.2f{e6e6fa} кг.', limit))
+				end
+			end
+		else
+			addChat('Нельзя собрать неизвестное растение.')
+		end
+	end)
+end
+
+function sampGetPlayerIdByNickname(name)
+	if type(name) == ('string') then
+		for id = 0, 1000 do
+			if IPC(id) then
+				local nick = sampGetPlayerName(id)
+				if nick == name then return id end
+			end
+		end
+	end
+end
+
+function IPC(id)
+	local result, playerId = sampGetPlayerIdByCharHandle(playerPed)
+
+	if result then
+		return sampIsPlayerConnected(id) or tonumber(id) == tonumber(playerId)
+	end
+
+	return false
+end
+
+function isKeyCheckAvailable()
+  if not isSampfuncsLoaded() then
+    return not isPauseMenuActive()
+  end
+  local result = not isSampfuncsConsoleActive() and not isPauseMenuActive()
+  if isSampLoaded() and isSampAvailable() then
+    result = result and not sampIsChatInputActive() and not sampIsDialogActive()
+  end
+  return result
+end
+
+function onScriptTerminate(script, bool)
+	if thisScript() == script then
+		for index, value in pairs(global.vegetation) do
+			if value.handle then if doesObjectExist(value.handle) then deleteObject(value.handle) end end
+		end
+		
+		for index, value in pairs(global.another) do
+			if type(value) == 'table' then if doesObjectExist(value.handle) then deleteObject(value.handle) end end
+		end
+		
+		if isPlayerControlLocked() then lockPlayerControl(false) end
+		--inicfg.save(ini, 'farming.ini')
+	end
+end
+
+function addChat(text)
+	sampAddChatMessage(string.format('farm of anarchy{e6e6fa} – %s', tostring(text)), 0xFFADEF23)
+end
+
+function clearRadius(x, y, z)
+	for index, value in pairs(global.vegetation) do
+		if type(value) == 'table' then
+			local x1, y1, z1 = value.position.x, value.position.y, value.position.z
+			local distance = getDistanceBetweenCoords3d(x1, y1, z1, x, y, z)
+			
+			if distance < 3 then return true end
+		end
+	end
+end
+
+function convertTableToString(data, index)
+	if type(data) == 'table' then
+		local d = data
+		
+		if index == 1 then
+			local result = string.format('%s | %s | %s | %s | %s, %s, %s | %s.%s.%s, %s, %s, %s | %s.%s.%s',
+			u8:decode(d.name), d.model, d.fix, d.quality, d.position.x, d.position.y, d.position.z, d.water.d, d.water.m, d.water.y, 
+			d.water.kd1, d.water.kd2, d.water.kd3, d.date.d, d.date.m, d.date.y)
+			return result
+		elseif index == 2 then
+			local result = string.format('%s | %s, %s, %s | %s, %s, %s', 
+			d.model, d.position.x, d.position.y, d.position.z, d.rotation.x, d.rotation.y, d.rotation.z)
+			return result
+		end
+	end
+end
+
+function convertStringToTable(data)
+	if type(data) == 'string' then
+		local regular1 = '(%S+) %| (%S+) %| (%S+) %| (%S+) %| (%S+), (%S+), (%S+) %| (%S+)%.(%S+)%.(%S+), (%S+), (%S+), (%S+) %| (%S+)%.(%S+)%.(%S+)'
+		local regular2 = '(%S+) %| (%S+), (%S+), (%S+) %| (%S+), (%S+), (%S+)'
+
+		if string.match(data, regular1) then
+			local name, model, fix, quality, x, y, z, wd, wm, wy, kd1, kd2, kd3, dd, dm, dy = string.match(data, regular1)
+			local _table = {
+				name = u8(name),
+				model = model,
+				quality = tonumber(quality),
+				fix = tonumber(fix),
+				position = {
+					x = x,
+					y = y,
+					z = z
+				},
+				water = {
+					d = wd,
+					m = wm,
+					y = wy,
+					kd1 = tonumber(kd1),
+					kd2 = tonumber(kd2),
+					kd3 = tonumber(kd3)
+				},
+				date = {
+					d = dd,
+					m = dm,
+					y = dy
+				}
+			}
+			
+			return _table
+		elseif string.match(data, regular2) then
+			local model, x, y, z, rx, ry, rz = string.match(data, regular2)
+			
+			local _table = {
+				model = model,
+				position = {
+					x = x,
+					y = y,
+					z = z
+				},
+				rotation = {
+					x = rx,
+					y = ry,
+					z = rz
+				}
+			}
+			
+			return _table
+		end
+	end
+end
+
+function saveVegetation(index, bool)
+	if global.vegetation[index] then
+		local result = convertTableToString(global.vegetation[index], 1)
+
+		if result then
+			ini.vegetation[index] = result
+			if not bool then
+				addChat('Информация о растении была обновлена.')
+				inicfg.save(ini, 'farming.ini')
+			end
+		else
+			addChat('Произошла ошибка при попытке сохранить растение.')
+		end
+	else
+		addChat('Данного растения не существует, проверьте правильность ID.')
+	end
+end
+
+function saveObject(index, bool)
+	if global.another[index] then
+		local result = convertTableToString(global.another[index], 2)
+
+		if result then
+			ini.another[index] = result
+			inicfg.save(ini, 'farming.ini')
+			
+			if not bool then
+				addChat('Информация о объекте была обновлена.')
+			end
+		else
+			addChat('Произошла ошибка при попытке сохранить объект.')
+		end
+	else
+		addChat('Данный объект не существует, проверьте правильность ID.')
+	end
+end
+
+function getCoordinates()
+	if isCharSittingInAnyCar(playerPed) then
+		return getCarCoordinates(storeCarCharIsInNoSave(playerPed))
+	else
+		return getCharCoordinates(playerPed)
+	end
+end
+
+function checkValidityDate(date)
+	if type(date) == 'table' then
+		local day, month, year = date.d, date.m, date.y
+		local _day, _month, _year = os.date('%d'), os.date('%m'), os.date('%Y')
+
+		local all1 = (tonumber(year) * 365) + (tonumber(month) * 30.41) + tonumber(day)
+		local all2 = (_year * 365) + (_month * 30.41) + _day
+
+		return math.floor(all2 - all1)
+	end
+end
+
+function emul_rpc(hook, parameters)
+    local bs_io = require 'samp.events.bitstream_io'
+    local handler = require 'samp.events.handlers'
+    local extra_types = require 'samp.events.extra_types'
+    local hooks = {
+
+        --[[ Outgoing rpcs
+        ['onSendEnterVehicle'] = { 'int16', 'bool8', 26 },
+        ['onSendClickPlayer'] = { 'int16', 'int8', 23 },
+        ['onSendClientJoin'] = { 'int32', 'int8', 'string8', 'int32', 'string8', 'string8', 'int32', 25 },
+        ['onSendEnterEditObject'] = { 'int32', 'int16', 'int32', 'vector3d', 27 },
+        ['onSendCommand'] = { 'string32', 50 },
+        ['onSendSpawn'] = { 52 },
+        ['onSendDeathNotification'] = { 'int8', 'int16', 53 },
+        ['onSendDialogResponse'] = { 'int16', 'int8', 'int16', 'string8', 62 },
+        ['onSendClickTextDraw'] = { 'int16', 83 },
+        ['onSendVehicleTuningNotification'] = { 'int32', 'int32', 'int32', 'int32', 96 },
+        ['onSendChat'] = { 'string8', 101 },
+        ['onSendClientCheckResponse'] = { 'int8', 'int32', 'int8', 103 },
+        ['onSendVehicleDamaged'] = { 'int16', 'int32', 'int32', 'int8', 'int8', 106 },
+        ['onSendEditAttachedObject'] = { 'int32', 'int32', 'int32', 'int32', 'vector3d', 'vector3d', 'vector3d', 'int32', 'int32', 116 },
+        ['onSendEditObject'] = { 'bool', 'int16', 'int32', 'vector3d', 'vector3d', 117 },
+        ['onSendInteriorChangeNotification'] = { 'int8', 118 },
+        ['onSendMapMarker'] = { 'vector3d', 119 },
+        ['onSendRequestClass'] = { 'int32', 128 },
+        ['onSendRequestSpawn'] = { 129 },
+        ['onSendPickedUpPickup'] = { 'int32', 131 },
+        ['onSendMenuSelect'] = { 'int8', 132 },
+        ['onSendVehicleDestroyed'] = { 'int16', 136 },
+        ['onSendQuitMenu'] = { 140 },
+        ['onSendExitVehicle'] = { 'int16', 154 },
+        ['onSendUpdateScoresAndPings'] = { 155 },
+        ['onSendGiveDamage'] = { 'int16', 'float', 'int32', 'int32', 115 },
+        ['onSendTakeDamage'] = { 'int16', 'float', 'int32', 'int32', 115 },]]
+
+        -- Incoming rpcs
+        ['onInitGame'] = { 139 },
+        ['onPlayerJoin'] = { 'int16', 'int32', 'bool8', 'string8', 137 },
+        ['onPlayerQuit'] = { 'int16', 'int8', 138 },
+        ['onRequestClassResponse'] = { 'bool8', 'int8', 'int32', 'int8', 'vector3d', 'float', 'Int32Array3', 'Int32Array3', 128 },
+        ['onRequestSpawnResponse'] = { 'bool8', 129 },
+        ['onSetPlayerName'] = { 'int16', 'string8', 'bool8', 11 },
+        ['onSetPlayerPos'] = { 'vector3d', 12 },
+        ['onSetPlayerPosFindZ'] = { 'vector3d', 13 },
+        ['onSetPlayerHealth'] = { 'float', 14 },
+        ['onTogglePlayerControllable'] = { 'bool8', 15 },
+        ['onPlaySound'] = { 'int32', 'vector3d', 16 },
+        ['onSetWorldBounds'] = { 'float', 'float', 'float', 'float', 17 },
+        ['onGivePlayerMoney'] = { 'int32', 18 },
+        ['onSetPlayerFacingAngle'] = { 'float', 19 },
+        --['onResetPlayerMoney'] = { 20 },
+        --['onResetPlayerWeapons'] = { 21 },
+        ['onGivePlayerWeapon'] = { 'int32', 'int32', 22 },
+        --['onCancelEdit'] = { 28 },
+        ['onSetPlayerTime'] = { 'int8', 'int8', 29 },
+        ['onSetToggleClock'] = { 'bool8', 30 },
+        ['onPlayerStreamIn'] = { 'int16', 'int8', 'int32', 'vector3d', 'float', 'int32', 'int8', 32 },
+        ['onSetShopName'] = { 'string256', 33 },
+        ['onSetPlayerSkillLevel'] = { 'int16', 'int32', 'int16', 34 },
+        ['onSetPlayerDrunk'] = { 'int32', 35 },
+        ['onCreate3DText'] = { 'int16', 'int32', 'vector3d', 'float', 'bool8', 'int16', 'int16', 'encodedString4096', 36 },
+        --['onDisableCheckpoint'] = { 37 },
+        ['onSetRaceCheckpoint'] = { 'int8', 'vector3d', 'vector3d', 'float', 38 },
+        --['onDisableRaceCheckpoint'] = { 39 },
+        --['onGamemodeRestart'] = { 40 },
+        ['onPlayAudioStream'] = { 'string8', 'vector3d', 'float', 'bool8', 41 },
+        --['onStopAudioStream'] = { 42 },
+        ['onRemoveBuilding'] = { 'int32', 'vector3d', 'float', 43 },
+        ['onCreateObject'] = { 44 },
+        ['onSetObjectPosition'] = { 'int16', 'vector3d', 45 },
+        ['onSetObjectRotation'] = { 'int16', 'vector3d', 46 },
+        ['onDestroyObject'] = { 'int16', 47 },
+        ['onPlayerDeathNotification'] = { 'int16', 'int16', 'int8', 55 },
+        ['onSetMapIcon'] = { 'int8', 'vector3d', 'int8', 'int32', 'int8', 56 },
+        ['onRemoveVehicleComponent'] = { 'int16', 'int16', 57 },
+        ['onRemove3DTextLabel'] = { 'int16', 58 },
+        ['onPlayerChatBubble'] = { 'int16', 'int32', 'float', 'int32', 'string8', 59 },
+        ['onUpdateGlobalTimer'] = { 'int32', 60 },
+        ['onShowDialog'] = { 'int16', 'int8', 'string8', 'string8', 'string8', 'encodedString4096', 61 },
+        ['onDestroyPickup'] = { 'int32', 63 },
+        ['onLinkVehicleToInterior'] = { 'int16', 'int8', 65 },
+        ['onSetPlayerArmour'] = { 'float', 66 },
+        ['onSetPlayerArmedWeapon'] = { 'int32', 67 },
+        ['onSetSpawnInfo'] = { 'int8', 'int32', 'int8', 'vector3d', 'float', 'Int32Array3', 'Int32Array3', 68 },
+        ['onSetPlayerTeam'] = { 'int16', 'int8', 69 },
+        ['onPutPlayerInVehicle'] = { 'int16', 'int8', 70 },
+        --['onRemovePlayerFromVehicle'] = { 71 },
+        ['onSetPlayerColor'] = { 'int16', 'int32', 72 },
+        ['onDisplayGameText'] = { 'int32', 'int32', 'string32', 73 },
+        --['onForceClassSelection'] = { 74 },
+        ['onAttachObjectToPlayer'] = { 'int16', 'int16', 'vector3d', 'vector3d', 75 },
+        ['onInitMenu'] = { 76 },
+        ['onShowMenu'] = { 'int8', 77 },
+        ['onHideMenu'] = { 'int8', 78 },
+        ['onCreateExplosion'] = { 'vector3d', 'int32', 'float', 79 },
+        ['onShowPlayerNameTag'] = { 'int16', 'bool8', 80 },
+        ['onAttachCameraToObject'] = { 'int16', 81 },
+        ['onInterpolateCamera'] = { 'bool', 'vector3d', 'vector3d', 'int32', 'int8', 82 },
+        ['onGangZoneStopFlash'] = { 'int16', 85 },
+        ['onApplyPlayerAnimation'] = { 'int16', 'string8', 'string8', 'bool', 'bool', 'bool', 'bool', 'int32', 86 },
+        ['onClearPlayerAnimation'] = { 'int16', 87 },
+        ['onSetPlayerSpecialAction'] = { 'int8', 88 },
+        ['onSetPlayerFightingStyle'] = { 'int16', 'int8', 89 },
+        ['onSetPlayerVelocity'] = { 'vector3d', 90 },
+        ['onSetVehicleVelocity'] = { 'bool8', 'vector3d', 91 },
+        ['onServerMessage'] = { 'int32', 'string32', 93 },
+        ['onSetWorldTime'] = { 'int8', 94 },
+        ['onCreatePickup'] = { 'int32', 'int32', 'int32', 'vector3d', 95 },
+        ['onMoveObject'] = { 'int16', 'vector3d', 'vector3d', 'float', 'vector3d', 99 },
+        ['onEnableStuntBonus'] = { 'bool', 104 },
+        ['onTextDrawSetString'] = { 'int16', 'string16', 105 },
+        ['onSetCheckpoint'] = { 'vector3d', 'float', 107 },
+        ['onCreateGangZone'] = { 'int16', 'vector2d', 'vector2d', 'int32', 108 },
+        ['onPlayCrimeReport'] = { 'int16', 'int32', 'int32', 'int32', 'int32', 'vector3d', 112 },
+        ['onGangZoneDestroy'] = { 'int16', 120 },
+        ['onGangZoneFlash'] = { 'int16', 'int32', 121 },
+        ['onStopObject'] = { 'int16', 122 },
+        ['onSetVehicleNumberPlate'] = { 'int16', 'string8', 123 },
+        ['onTogglePlayerSpectating'] = { 'bool32', 124 },
+        ['onSpectatePlayer'] = { 'int16', 'int8', 126 },
+        ['onSpectateVehicle'] = { 'int16', 'int8', 127 },
+        ['onShowTextDraw'] = { 134 },
+        ['onSetPlayerWantedLevel'] = { 'int8', 133 },
+        ['onTextDrawHide'] = { 'int16', 135 },
+        ['onRemoveMapIcon'] = { 'int8', 144 },
+        ['onSetWeaponAmmo'] = { 'int8', 'int16', 145 },
+        ['onSetGravity'] = { 'float', 146 },
+        ['onSetVehicleHealth'] = { 'int16', 'float', 147 },
+        ['onAttachTrailerToVehicle'] = { 'int16', 'int16', 148 },
+        ['onDetachTrailerFromVehicle'] = { 'int16', 149 },
+        ['onSetWeather'] = { 'int8', 152 },
+        ['onSetPlayerSkin'] = { 'int32', 'int32', 153 },
+        ['onSetInterior'] = { 'int8', 156 },
+        ['onSetCameraPosition'] = { 'vector3d', 157 },
+        ['onSetCameraLookAt'] = { 'vector3d', 'int8', 158 },
+        ['onSetVehiclePosition'] = { 'int16', 'vector3d', 159 },
+        ['onSetVehicleAngle'] = { 'int16', 'float', 160 },
+        ['onSetVehicleParams'] = { 'int16', 'int16', 'bool8', 161 },
+        --['onSetCameraBehind'] = { 162 },
+        ['onChatMessage'] = { 'int16', 'string8', 101 },
+        ['onConnectionRejected'] = { 'int8', 130 },
+        ['onPlayerStreamOut'] = { 'int16', 163 },
+        ['onVehicleStreamIn'] = { 164 },
+        ['onVehicleStreamOut'] = { 'int16', 165 },
+        ['onPlayerDeath'] = { 'int16', 166 },
+        ['onPlayerEnterVehicle'] = { 'int16', 'int16', 'bool8', 26 },
+        ['onUpdateScoresAndPings'] = { 'PlayerScorePingMap', 155 },
+        ['onSetObjectMaterial'] = { 84 },
+        ['onSetObjectMaterialText'] = { 84 },
+        ['onSetVehicleParamsEx'] = { 'int16', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 'int8', 24 },
+        ['onSetPlayerAttachedObject'] = { 'int16', 'int32', 'bool', 'int32', 'int32', 'vector3d', 'vector3d', 'vector3d', 'int32', 'int32', 113 }
+
+    }
+    local handler_hook = {
+        ['onInitGame'] = true,
+        ['onCreateObject'] = true,
+        ['onInitMenu'] = true,
+        ['onShowTextDraw'] = true,
+        ['onVehicleStreamIn'] = true,
+        ['onSetObjectMaterial'] = true,
+        ['onSetObjectMaterialText'] = true
+    }
+    local extra = {
+        ['PlayerScorePingMap'] = true,
+        ['Int32Array3'] = true
+    }
+    local hook_table = hooks[hook]
+    if hook_table then
+        local bs = raknetNewBitStream()
+        if not handler_hook[hook] then
+            local max = #hook_table-1
+            if max > 0 then
+                for i = 1, max do
+                    local p = hook_table[i]
+                    if extra[p] then extra_types[p]['write'](bs, parameters[i])
+                    else bs_io[p]['write'](bs, parameters[i]) end
+                end
+            end
+        else
+            if hook == 'onInitGame' then handler.on_init_game_writer(bs, parameters)
+            elseif hook == 'onCreateObject' then handler.on_create_object_writer(bs, parameters)
+            elseif hook == 'onInitMenu' then handler.on_init_menu_writer(bs, parameters)
+            elseif hook == 'onShowTextDraw' then handler.on_show_textdraw_writer(bs, parameters)
+            elseif hook == 'onVehicleStreamIn' then handler.on_vehicle_stream_in_writer(bs, parameters)
+            elseif hook == 'onSetObjectMaterial' then handler.on_set_object_material_writer(bs, parameters, 1)
+            elseif hook == 'onSetObjectMaterialText' then handler.on_set_object_material_writer(bs, parameters, 2) end
+        end
+        raknetEmulRpcReceiveBitStream(hook_table[#hook_table], bs)
+        raknetDeleteBitStream(bs)
+    end
+end
+
+function renderBoxRounded(x, y, w, h, r, color, left, right)
+	renderDrawBox(x + r, y, w - r, h - 1, color)
+
+	if not left then
+		renderCircle(x + r, y, r * 4, math.pi, 3 * math.pi / 2, color)
+		renderDrawBox(x - r + 1, y + r * 2 - 1, r * 2 - 1, h - r * 4, color)
+		renderRound(x + r, y + h - r * 4, r * 4, math.pi / 2, math.pi, color)
+	end
+
+	if not right then
+		renderCircle(x + w, y, r * 4, 3 * math.pi / 2, 2 * math.pi, color)
+		renderDrawBox(x + w, y + r * 2 - 1, r * 2, h - r * 4, color)
+		renderCircle(x + w, y + h - r * 4, r * 4, 0, math.pi / 2, color)
+	end
+
+end
+
+function renderCircle(x, y, d, s, e, color)
+	local r = math.ceil( d / 2 )
+	y = y - 1.0
+	renderBegin(6)
+	renderSetRenderState(161 --[[D3DRS_MULTISAMPLEANTIALIAS]], 1)
+
+	local step = math.abs(((e < 0) and (2 * math.pi + e) or e) - ((s < 0) and (2 * math.pi + s) or s)) / r
+	renderColor(color)
+	renderVertex(x, y + r)
+	for i = s, e, step do
+		renderVertex(x + r * math.cos( i ), y + r * math.sin( i ) + r)
+	end
+	renderVertex(x + r * math.cos( e ), y + r * math.sin( e ) + r)
+
+
+	renderEnd()
+end
+	
+function renderRound(x, y, d, s, e, color)
+	local r = math.ceil( d / 2 )
+	y = y - 1.0
+	renderBegin(6)
+	renderSetRenderState(161 --[[D3DRS_MULTISAMPLEANTIALIAS]], 1)
+
+	local step = e / (d - 1)
+	renderColor(color)
+	renderVertex(x, y + r)
+	for i = s, e, step do
+		renderVertex(x + r * math.cos( i ), y + r * math.sin( i ) + r)
+	end
+	r = r - 1
+	renderVertex(x + r * math.cos( e ), y + r * math.sin( e ) + r)
+
+	renderEnd()
+end
+
+function decode()
+	local f = io.open(thisScript().path, 'r')
+	local text = f:read('*a')
+	f:close()
+		
+	local fw = io.open(thisScript().path, 'w')
+	fw:write(u8:decode(text))
+	fw:close()
+end
+
+function autoUpdate(versionUrl, updateUrl)
+	local versionPath = string.format('%s\\%s-version.json', getWorkingDirectory(), thisScript().name)
+	if doesFileExist(versionPath) then os.remove(versionPath) end
+
+	downloadUrlToFile(versionUrl, versionPath, function(id, status, value1, value2)
+		if status == downloadStatus.STATUSEX_ENDDOWNLOAD then
+			if doesFileExist(versionPath) then
+				local versionFile = io.open(versionPath, 'r')
+
+				if versionFile then
+					local versionInfo = decodeJson(versionFile:read('*a'))
+					versionFile:close() os.remove(versionPath)
+
+					if versionInfo.latest == thisScript().version then
+						addChat('Вы используете актуальную версию скрипта.')
+					else
+						lua_thread.create(function()
+							wait(200)
+
+							downloadUrlToFile(updateUrl, thisScript().path, function(id, status, value1, value2)
+								if status == downloadStatus.STATUSEX_ENDDOWNLOAD then
+									addChat('Найдено и установлено обновление для данного скрипта.')
+									decode()
+									lua_thread.create(function() wait(1000) thisScript():reload() end)
+								end
+							end)
+						end)
+					end
+				end
+			else
+				addChat('Произошла ошибка при попытке установить обновление.')
+			end
+		end
+	end)
+end
