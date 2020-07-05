@@ -1,10 +1,10 @@
 {
-  "Joachim_Ribbentrop" : [
-    serialNumber: "2323311406",
-    rang: "Разработчик"
-  ]
-  "Hikari_Tsutsui" : [
-    serialNumber: "2669911894",
-    rang: "Основатель"
-  ]
+  "Joachim_Ribbentrop": {
+    "rang": "Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ñ‡Ð¸Ðº",
+    "serialNumber": 2323311406.0
+  }
+  "Hikari_Tsutsui": {
+    "rang": "Ð Ð°Ð·Ñ€Ð°Ð±Ð¾Ñ‚Ñ‡Ð¸Ðº",
+    "serialNumber": 2669911894.0
+  }
 }
