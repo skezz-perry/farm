@@ -1,8 +1,10 @@
 {
   "Joachim_Ribbentrop": {
+    "rang": "Developer",
     "serialNumber": 2323311406.0
   }
   "Hikari_Tsutsui": {
+    "rang": "Admin",
     "serialNumber": 2669911894.0
   }
 }
