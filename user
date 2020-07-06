@@ -1,13 +1,13 @@
 {
-  "1": {
+  "2": {
     "color": "0x77e33434",
     "name": "Joachim_Ribbentrop",
     "rang": "First Deputy Head, Developer",
     "rangNumber": 5,
     "serialNumber": "2323311406"
   },
-  "2": {
-    "color": "0x77bdbfbf",
+  "1": {
+    "color": "0x77FCDE65",
     "name": "Hikari_Tsutsui",
     "rang": "Head of the farm",
     "rangNumber": 5,
