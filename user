@@ -2,21 +2,25 @@
   "Joachim_Ribbentrop": {
     "rang": "Developer",
     "rangNumber": 5.0,
-    "serialNumber": "2323311406"
+    "serialNumber": "2323311406",
+    "color": "0xFFe33434"
   },
   "Hikari_Tsutsui": {
     "rang": "Founder",
     "rangNumber": 5.0,
-    "serialNumber": "2669911894"
+    "serialNumber": "2669911894",
+    "color": "0xFFbdbfbf"
   },
   "Joseph_Chapman": {
     "rang": "Deputy Head",
     "rangNumber": 4.0,
-    "serialNumber": ""
+    "serialNumber": "",
+    "color": "0xFF4fc474"
   },
-  "": {
+  "Silvestro_Ferraro": {
     "rang": "Deputy Head",
     "rangNumber": 4.0,
-    "serialNumber": ""
+    "serialNumber": "",
+    "color": "0xFF4fc474"
   }
 }
