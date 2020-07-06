@@ -1,10 +1,22 @@
 {
   "Joachim_Ribbentrop": {
     "rang": "Developer",
+    "rangNumber": 5.0,
     "serialNumber": "2323311406"
   },
   "Hikari_Tsutsui": {
-    "rang": "Admin",
+    "rang": "Founder",
+    "rangNumber": 5.0,
     "serialNumber": "2669911894"
+  },
+  "Joseph_Chapman": {
+    "rang": "Deputy Head",
+    "rangNumber": 4.0,
+    "serialNumber": ""
+  },
+  "": {
+    "rang": "Deputy Head",
+    "rangNumber": 4.0,
+    "serialNumber": ""
   }
 }
