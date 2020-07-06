@@ -1,27 +1,27 @@
 {
   "2": {
-    "color": "0x77e33434",
+    "color": "0xaae33434",
     "name": "Joachim_Ribbentrop",
     "rang": "First Deputy Head, Developer",
     "rangNumber": 5,
     "serialNumber": "2323311406"
   },
   "1": {
-    "color": "0x77FCDE65",
+    "color": "0xaaFCDE65",
     "name": "Hikari_Tsutsui",
     "rang": "Head of the farm",
     "rangNumber": 5,
     "serialNumber": "2669911894"
   },
   "3": {
-    "color": "0x774fc474",
+    "color": "0xaa4fc474",
     "name": "Joseph_Chapman",
     "rang": "Deputy Head for Engineering and Transport",
     "rangNumber": 4,
     "serialNumber": ""
   },
   "4": {
-    "color": "0x774fc474",
+    "color": "0xaa4fc474",
     "name": "Silvestro_Ferraro",
     "rang": "Deputy Head of Legal Affairs",
     "rangNumber": 4,
