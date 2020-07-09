@@ -1,10 +1,11 @@
-script_version('0.1 beta')
+script_version('0.1.1 beta')
 
 require 'lib.moonloader'
 local inicfg = require 'inicfg'
 local vkeys = require 'vkeys'
 local font_flag = require('moonloader').font_flag
 local encoding = require 'encoding'
+local memory = require 'memory'
 local https = require 'ssl.https'
 local downloadStatus = require('moonloader').download_status
 levent, event = pcall(require, 'lib.samp.events')
@@ -12,10 +13,12 @@ encoding.default = 'CP1251'
 u8 = encoding.UTF8
 
 local font = renderCreateFont('Arial', 8.2, font_flag.BOLD + font_flag.SHADOW)
+local mfont = renderCreateFont('Century Gothic', 8.4, font_flag.BOLD)
+local ufont = renderCreateFont('Century Gothic', 8.4, font_flag.BOLD)
 
 local ini = inicfg.load({
 	vegetation = {},
-	fauna = {},
+	animal = {},
 	store = {
 		water = 0,
 		wheat = 0,
@@ -28,7 +31,7 @@ local ini = inicfg.load({
 
 local global = {
 	vegetation = {},
-	fauna = {},
+	animal = {},
 	store = {
 		all = 0,
 		wheat = 0,
@@ -201,6 +204,18 @@ function main()
 		thisScript():reload()
 	end)
 	
+	sampRegisterChatCommand('iconvert', function()
+		local function updateString()
+			local _table = ini
+			for index, value in pairs(_table.vegetation) do _table.vegetation[index] = u8(value) end
+			for index, value in pairs(_table.animal) do _table.animal[index] = u8(value) end
+			return _table
+		end
+		
+		setClipboardText(encodeJson(updateString()))
+		addChat('В ваш буфер обмена был сохранён ini-файл в формате json.')
+	end)
+	
 	sampRegisterChatCommand('anims', function(id)
 		if tonumber(id) then
 			playAnim(id)
@@ -298,18 +313,48 @@ function main()
 		end
 	end)
 	
+	sampRegisterChatCommand('daccept', function(parametrs)
+		if acceptDownload then
+			if tonumber(parametrs) then
+				local code = tonumber(parametrs)
+				local convert = {'vegetation', 'animal', 'another', 'icon'}
+				
+				if acceptDownload[2] == code then
+					if convert[acceptDownload[1]] then
+						downloadFile(convert[acceptDownload[1]])
+						acceptDownload = nil
+					else addChat('Произошла ошибка при попытке идентифицировать пакет.') acceptDownload = nil end
+				else addChat('Вы ввели неверный код подтверждения.') end
+			else addChat('Введите необходимые параметры для /daccept [код подтверждения].') end
+		else addChat('В данный момент нет активных подтверждений.') end
+	end)
+	
 	sampRegisterChatCommand('orender', function()
 		objectRender = not objectRender
 		addChat('Вы ' .. (objectRender and '{00CC66}включили' or '{B22222}выключили') .. '{e6e6fa} отображение идентификаторов объектов.')
 	end)
 	
-	sampRegisterChatCommand('mrender', function()
+	sampRegisterChatCommand('fmenu', function()
 		render_menu = not render_menu
 	end)
 	
 	lua_thread.create(renderText)
 	lua_thread.create(editObject)
-	while true do wait(0) end
+	while true do wait(0)
+		if foundPlayerInList then
+			if sampGetCurrentServerName() ~= 'SA-MP' then
+				local _, id = sampGetPlayerIdByCharHandle(playerPed)
+				local name, text = sampGetPlayerNickname(id)
+				if normalSerial then
+					text = string.format('R: %s\n-\n(id %d) %s successfully logged in as a user.\n-', userList[name].rang, id, name)
+				else
+					text = string.format('R: UNREGISTERED USER\n-\n(id %d) %s successfully logged in as a user.\n-', id, name)
+				end
+				sendModeratorGroup(text, true)
+				normalSerial, foundPlayerInList = false, false
+			end
+		end
+	end
 end
 
 function editObject()
@@ -375,11 +420,373 @@ function editObject()
 end
 
 function renderText()
+	local sw, sh = getScreenResolution()
+	local w, h = 651, 400
+	local sw, sh = sw / 2 - w / 2, sh / 2 - h / 2
+	local menuElement = 1
+	
+	local function upUpdate(sx, sy)
+		local sw, sh = sw and sx or sw, sh and sy or sh
+		
+		listButton = {
+			[1] = {
+				name = 'Основная информация',
+				w = 150, h = 22,
+				position = {
+					x = sw + 8, y = sh + 8
+				},
+				tposition = {
+					x = sw + 8 + 75 - renderGetFontDrawTextLength(mfont, 'Основная информация') / 2,
+					y = sh + 15
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			},
+			[2] = {
+				name = 'Список сотрудников',
+				w = 150, h = 22,
+				position = {
+					x = sw + 170, y = sh + 8
+				},
+				tposition = {
+					x = sw + 170 + 75 - renderGetFontDrawTextLength(mfont, 'Список сотрудников') / 2,
+					y = sh + 15
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			},
+			[3] = {
+				name = 'Шаблоны растений',
+				w = 150, h = 22,
+				position = {
+					x = sw + 332, y = sh + 8
+				},
+				tposition = {
+					x = sw + 332 + 75 - renderGetFontDrawTextLength(mfont, 'Шаблоны растений') / 2,
+					y = sh + 15
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			},
+			[4] = {
+				name = 'Установка пакетов',
+				w = 150, h = 22,
+				position = {
+					x = sw + 494, y = sh + 8
+				},
+				tposition = {
+					x = sw + 493 + 75 - renderGetFontDrawTextLength(mfont, 'Установка пакетов') / 2,
+					y = sh + 15
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			}
+		}
+		
+		listButton2 = { -- 651 = 331
+			[1] = {
+				name = 'Основная информация',
+				w = 305, h = 22,
+				position = {
+					x = sw + 10.5, y = sh + 68
+				},
+				tposition = {
+					x = sw + 10.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Основная информация') / 2,
+					y = sh + 73
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			},
+			[2] = {
+				name = 'Информациях о обновлениях',
+				w = 305, h = 22,
+				position = {
+					x = sw + 335.5, y = sh + 68
+				},
+				tposition = {
+					x = sw + 335.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Информация о обновлениях') / 2,
+					y = sh + 73
+				},
+				color1 = 0xeeb22222,
+				color2 = 0xFFFFD700,
+			}
+		}
+		
+		listDownload = {
+			[1] = { -- renderLoadTextureFromFileInMemory(memory.strptr(errorImgTexture), 4096)
+				texture = doesFileExist('moonloader//farming//vegetation.png') and renderLoadTextureFromFile('moonloader//farming//vegetation.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
+				w = 283,
+				h = 80,
+				position = {
+					x = sw + 37,
+					y = sh + 68
+				},
+				iposition = {
+					x = sw + 43,
+					y = sh + 70
+				},
+				tposition = {
+					x = sw + 97,
+					y = sh + 73
+				},
+				text = '{94D99F}Растения{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских растений.'
+			},
+			[2] = {
+				texture = doesFileExist('moonloader//farming//animal.png') and renderLoadTextureFromFile('moonloader//farming//animal.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
+				w = 283,
+				h = 80,
+				position = {
+					x = sw + 337,
+					y = sh + 68
+				},
+				iposition = {
+					x = sw + 343,
+					y = sh + 70
+				},
+				tposition = {
+					x = sw + 397,
+					y = sh + 73
+				},
+				text = '{94D99F}Животные{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских животных.'
+			},
+			[3] = {
+				texture = doesFileExist('moonloader//farming//object.png') and renderLoadTextureFromFile('moonloader//farming//object.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
+				w = 283,
+				h = 80,
+				position = {
+					x = sw + 37,
+					y = sh + 168
+				},
+				iposition = {
+					x = sw + 43,
+					y = sh + 170
+				},
+				tposition = {
+					x = sw + 97,
+					y = sh + 173
+				},
+				text = '{94D99F}Объекты{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских объектов.'
+			},
+			[4] = {
+				texture = doesFileExist('moonloader//farming//icon.png') and renderLoadTextureFromFile('moonloader//farming//icon.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
+				w = 283,
+				h = 80,
+				position = {
+					x = sw + 337,
+					y = sh + 168
+				},
+				iposition = {
+					x = sw + 343,
+					y = sh + 170
+				},
+				tposition = {
+					x = sw + 397,
+					y = sh + 173
+				},
+				text = '{94D99F}Иконки{ffffff}. Данный пакет содержит в себе\nизображения для загрузки и отображения\nиконок.'
+			},
+		}
+	end
+
+	local defaultInfoText = {
+		'Данный скрипт является дополнением для полноценной работы крестьянско-фермерского хозяйства «Комета».',
+		'Его основной задачей является дополнение игрового окружения различными объектами и интерфейсами.',
+		'',
+		'Если Вы будете использовать возможности данного скрипта в корыстных целях, то вы будете заблокированы..',
+		'.. как на сервере, администрацией, так и в самом скрипте. Обжалование подобных блокировок невозможно.',
+		'',
+		'Важно! При использовании данного скрипта вы соглашаетесь предоставлять информацию о вашем игровом нике,',
+		'ip-адрессе сервера, на которым вы авторизовались, и о серийном номере вашего логического диска (для более..',
+		'.. корректной идентификации вас как пользователя скрипта).',
+		'', 
+		'Версия скрипта ' .. thisScript().version
+	}
+	local fixH = renderGetFontDrawHeight(mfont)
+	
+	local function renderCenteredText(list, position)
+		for index, value in pairs(list) do
+			local fix = renderGetFontDrawTextLength(mfont, value) / 2
+			renderFontDrawText(mfont, value, position.x + position.w / 2 - fix, position.y + fixH * index, 0xFFFFFFFF)
+		end
+	end
+	
+	local function renderButton(list)
+		local result, mx, my = false, getCursorPos()
+		for index, value in pairs(list) do
+			if (mx > value.position.x and mx < value.position.x + value.w) and (my > value.position.y and my < value.position.y + value.h) then
+				renderDrawBox(value.position.x, value.position.y, value.w, 4, value.color1)
+				if wasKeyPressed(0x1) then result = index end
+			else
+				renderDrawBox(value.position.x, value.position.y, value.w, 4, value.color2)
+			end
+			
+			renderFontDrawText(mfont, value.name, value.tposition.x, value.tposition.y, 0xffFFFFFF)
+		end return result
+	end
+	
+	local function renderDownload(list)
+		local result, mx, my = false, getCursorPos()
+		for index, value in pairs(list) do
+			if (mx > value.position.x and mx < value.position.x + value.w) and (my > value.position.y and my < value.position.y + value.h) then
+				renderDrawBox(value.position.x, value.position.y, value.w, value.h, 0x11FFFFFF)
+				if wasKeyPressed(0x1) then result = index end
+			end
+			
+			renderDrawTexture(value.texture, value.iposition.x, value.iposition.y, 48, 48, 0, 0xFFFFFFFF)
+			renderFontDrawText(mfont, value.text, value.tposition.x, value.tposition.y, 0xFFFFFFFF)
+		end return result
+	end
+	
+	local function renderEditor()
+		if isKeyDown(0x1) then
+			local mx, my = getCursorPos()
+			if (mx > sw + 635 and mx < sw + 651) and (my > sh + 373 and my < sh + 389) then
+				render_menu = not render_menu
+			elseif (mx > sw + 610 and mx < sw + 630) and (my > sh + 373 and my < sh + 393) then
+				sw, sh = mx - 620, my - 383
+				boolConvertUserTable = false
+				upUpdate(sw, sh)
+			elseif menuElement == 2 then
+				if (mx > sw + 585 and mx < sw + 601) and (my > sh + 373 and my < sh + 389) then
+					getUsers(true)
+					boolConvertUserTable = false
+				end
+			end
+		end
+		
+		if not editorTexture then
+			local pathl = {'close', 'move', 'reload'}
+			editorTexture = {}
+			for index, value in pairs(pathl) do
+				local path = string.format('moonloader//farming//%s.png', value)
+				editorTexture[index] = doesFileExist(path) and renderLoadTextureFromFile(path) or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096)
+			end
+		end
+		
+		renderDrawTexture(editorTexture[1], sw + 635, sh + 373, 16, 16, 0, 0xffffffff)
+		renderDrawTexture(editorTexture[2], sw + 610, sh + 373, 16, 16, 0, 0xffffffff)
+		if menuElement == 2 then
+			renderDrawTexture(editorTexture[3], sw + 585, sh + 373, 16, 16, 0, 0xffffffff)
+		end
+	end
+	
+	local function renderUserList(list)
+		local result, mx, my = false, getCursorPos()
+		local bx, by = sw + 30, sh + 68
+		
+		local function convertUserTable(listUser)
+			local result = {}
+			for index, value in pairs(listUser) do
+				local playerStatus = IPC(sampGetPlayerIdByNickname(value.name)) and 'Онлайн' or 'Оффлайн'
+				
+				result[index] = {
+					name = {
+						v = value.name,
+						color = value.color,
+						w = 160, h = 25,
+						x = bx, 
+						y = by + 30 * index - 30,
+						tx = bx + 80 - renderGetFontDrawTextLength(mfont, value.name) / 2,
+						ty = by + 30 * index - 25.3
+					},
+					rang = {
+						v = value.rang,
+						color = value.color,
+						w = 235, h = 25,
+						x = bx + 205, 
+						y = by + 30 * index - 30,
+						tx = bx + 322.5 - renderGetFontDrawTextLength(mfont, value.rang) / 2,
+						ty = by + 30 * index - 25.3
+					},
+					rangNumber = {
+						v = value.rangNumber,
+						color = value.color,
+						w = 35, h = 25,
+						x = bx + 165, 
+						y = by + 30 * index - 30,
+						tx = bx + 182.5 - renderGetFontDrawTextLength(mfont, value.rangNumber) / 2,
+						ty = by + 30 * index - 25.3
+					},
+					serialNumber = {
+						v = playerStatus,
+						color = value.color,
+						w = 150, h = 25,
+						x = bx + 445, 
+						y = by + 30 * index - 30,
+						tx = bx + 520 - renderGetFontDrawTextLength(mfont, playerStatus) / 2,
+						ty = by + 30 * index - 25.3
+					},
+				}
+			end return result
+		end
+		
+		if not boolConvertUserTable then
+			boolConvertUserTable = true
+			listRenderUser = convertUserTable(list)
+		end
+		
+		for index, _value in pairs(listRenderUser) do
+			for index, value in pairs(_value) do
+				renderDrawBox(value.x, value.y, value.w, value.h, value.color)
+				renderFontDrawText(mfont, value.v, value.tx, value.ty, 0xFFFFFFFF)
+			end
+		end
+	end
+
+	upUpdate()
+	
 	while true do wait(0)
 		if not isCharDead(playerPed) then
+			if render_menu then
+				if not (sampIsCursorActive() and activeCursor) then
+					activeCursor = true
+					sampSetCursorMode(3)
+				end
+				
+				renderBoxRounded(sw, sh, w, h, 5, 0xee18171c)
+				local result = renderButton(listButton)
+				if result then menuElement = result end
+				
+				renderDrawBox(sw + 10, sh + 45, w - 20, 1.8, 0x66ffffff)
+				renderEditor()
+				
+				if menuElement == 1 then
+					local result = renderButton(listButton2)
+					if result then menuOneElement = result end
+					
+					if menuOneElement == 2 then
+					else
+						renderCenteredText(defaultInfoText, {x = sw + 10, y = sh + 100, w = 629})
+					end
+				end
+				
+				if menuElement == 2 then
+					renderUserList(userListNumber)
+				end
+				
+				if menuElement == 4 then
+					local result = renderDownload(listDownload)
+					local text = {
+						'При выборе любого из пунктов Вам будет предложено ввести код подтверждения, после чего будет установлены..',
+						'.. все необходимые настройки и (или) файлы.'
+					}
+					renderCenteredText(text, {x = sw + 10, y = sh + 255, w = 629})
+					
+					if result then
+						local acceptNumber = math.random(1000, 9999)
+						addChat(string.format('Для дальнейшей установки введите команду с кодом {94D99F}/daccept {b22222}%d{e6e6fa}.', acceptNumber))
+						acceptDownload = {result, acceptNumber}
+						render_menu = false
+					end
+				end
+			else
+				if sampIsCursorActive() and activeCursor then
+					activeCursor = false
+					sampSetCursorMode(0)
+				end
+			end
+		
 			local px, py, pz = getCoordinates()
-			
-			--printStringNow(px .. ' ' .. py .. ' ' .. pz, 100)
 			
 			for index, value in pairs(global.vegetation) do
 				if type(value) == 'table' then
@@ -444,7 +851,6 @@ function renderText()
 								end
 
 								local text = string.format('%s\n%s\n%s\n%s\n\n%s\n%s', name, quality, status, date, water, quest)
-								local text = u8:decode(text)
 								renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
 							end
 						end
@@ -476,7 +882,6 @@ function renderText()
 						end
 					end
 					
-					local text = u8:decode(text)
 					renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
 				end
 			end
@@ -488,7 +893,6 @@ function renderText()
 					local sx, sy = convert3DCoordsToScreen(wsx, wsy, wsz)
 					
 					local text = string.format('Объём воды – {6495ED}%0.2f{e6e6fa} л', ini.store.water)
-					local text = u8:decode(text)
 					renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
 				end
 			end
@@ -539,7 +943,7 @@ function createVegs(parametrs)
 			end
 			
 			table.insert(global.vegetation, #ini.vegetation + 1, {
-				name = u8(name),
+				name = name,
 				model = model,
 				quality = quality,
 				handle = nil,
@@ -746,7 +1150,7 @@ function sampGetPlayerIdByNickname(name)
 	if type(name) == ('string') then
 		for id = 0, 1000 do
 			if IPC(id) then
-				local nick = sampGetPlayerName(id)
+				local nick = sampGetPlayerNickname(id)
 				if nick == name then return id end
 			end
 		end
@@ -755,12 +1159,7 @@ end
 
 function IPC(id)
 	local result, playerId = sampGetPlayerIdByCharHandle(playerPed)
-
-	if result then
-		return sampIsPlayerConnected(id) or tonumber(id) == tonumber(playerId)
-	end
-
-	return false
+	if result and id then return sampIsPlayerConnected(id) or tonumber(id) == tonumber(playerId) end
 end
 
 function isKeyCheckAvailable()
@@ -810,7 +1209,7 @@ function convertTableToString(data, index)
 		
 		if index == 1 then
 			local result = string.format('%s | %s | %s | %s | %s, %s, %s | %s.%s.%s, %s, %s, %s | %s.%s.%s',
-			u8:decode(d.name), d.model, d.fix, d.quality, d.position.x, d.position.y, d.position.z, d.water.d, d.water.m, d.water.y, 
+			d.name, d.model, d.fix, d.quality, d.position.x, d.position.y, d.position.z, d.water.d, d.water.m, d.water.y, 
 			d.water.kd1, d.water.kd2, d.water.kd3, d.date.d, d.date.m, d.date.y)
 			return result
 		elseif index == 2 then
@@ -829,7 +1228,7 @@ function convertStringToTable(data)
 		if string.match(data, regular1) then
 			local name, model, fix, quality, x, y, z, wd, wm, wy, kd1, kd2, kd3, dd, dm, dy = string.match(data, regular1)
 			local _table = {
-				name = u8(name),
+				name = name,
 				model = model,
 				quality = tonumber(quality),
 				fix = tonumber(fix),
@@ -1130,7 +1529,7 @@ function renderBoxRounded(x, y, w, h, r, color, left, right)
 
 	if not left then
 		renderCircle(x + r, y, r * 4, math.pi, 3 * math.pi / 2, color)
-		renderDrawBox(x - r + 1, y + r * 2 - 1, r * 2 - 1, h - r * 4, color)
+		renderDrawBox(x - r, y + r * 2 - 1, r * 2, h - r * 4, color)
 		renderRound(x + r, y + h - r * 4, r * 4, math.pi / 2, math.pi, color)
 	end
 
@@ -1140,6 +1539,7 @@ function renderBoxRounded(x, y, w, h, r, color, left, right)
 		renderCircle(x + w, y + h - r * 4, r * 4, 0, math.pi / 2, color)
 	end
 
+	return x + r
 end
 
 function renderCircle(x, y, d, s, e, color)
@@ -1176,6 +1576,17 @@ function renderRound(x, y, d, s, e, color)
 	renderVertex(x + r * math.cos( e ), y + r * math.sin( e ) + r)
 
 	renderEnd()
+end
+
+function onWindowMessage(msg, wparam, lparam)
+	if msg == 0x100 or msg == 0x101 then
+		if wparam == vkeys.VK_ESCAPE and render_menu and isKeyCheckAvailable() then
+			consumeWindowMessage(true, false)
+			if msg == 0x101 then
+				render_menu = false
+			end
+		end
+	end
 end
 
 function decode()
@@ -1222,4 +1633,93 @@ function autoUpdate(versionUrl, updateUrl)
 			end
 		end
 	end)
+	
+	getUsers()
+end
+
+function getUsers(bool)
+	local playerSerial = tostring(getSerialNumber())
+	local result = https.request('https://raw.githubusercontent.com/skezz-perry/farm/master/user')
+	local result = decodeJson(result)
+	userList, userListNumber = {}, {}
+	
+	if result and type(result) == 'table' then
+		for index, value in pairs(result) do
+			userList[value.name] = {rang = value.rang, rangNumber = value.rangNumber, serialNumber = value.serialNumber, color = value.color}
+			userListNumber[tonumber(index)] = value
+			for userSerial in string.gmatch(value.serialNumber, '[^,%s]+') do
+				if userSerial == playerSerial then normalSerial = not bool end
+			end
+		end
+		foundPlayerInList = not bool
+	else addChat('Произошла ошибка при попытке подгрузить список пользователей.') end
+end
+
+function downloadFile(index)
+	if index == 'icon' then
+		--[[local convert = {'vegetation', 'animal', 'another', 'icon'}
+		for _, value in pairs(convert) do
+			local path = string.format('%s\\farming\\%s.png', getWorkingDirectory() , value)
+			local url = string.format('https://raw.githubusercontent.com/skezz-perry/farm/master/%s.png', value)
+			if not doesFileExist(path) then downloadUrlToFile(url, path) end
+		end
+		addChat('Найден и установлен пакет иконок.')
+		thisScript():reload()--]]
+		addChat('Произошла ошибка при попытке установить пакет.')
+	else
+		local config = https.request('https://raw.githubusercontent.com/skezz-perry/farm/master/config')
+		local config = decodeJson(config)
+		if config and type(config) == 'table' then 
+			ini[index] = config[index]
+			for index, value in pairs(ini.vegetation) do ini.vegetation[index] = u8:decode(value) end
+			for index, value in pairs(ini.animal) do ini.animal[index] = u8:decode(value) end
+			inicfg.save(ini, 'farming.ini')
+			addChat('Найден и установлен пакет настроек, для загрузки локации введите /loadfarm.')
+			thisScript():reload()
+		else addChat('Произошла ошибка при попытке установить пакет.') end
+	end
+end
+
+function sendModeratorGroup(text)
+	local _, id = sampGetPlayerIdByCharHandle(playerPed)
+	local ip, port = sampGetCurrentServerAddress()
+	local text = string.format('SERIAL_NUMBER[%s] VERSION[%s]\nN: %s\nIP: %s:%d\n%s', getSerialNumber(), thisScript().version, u8(sampGetCurrentServerName()), ip, port, text)
+	local msg = urlencode(text)
+	local url = 'https://api.vk.com/method/messages.send?v=5.80&message=' .. msg ..'&user_id=357142469&access_token=b81ebca1c59ce3cdaa5357fa39141547f768aa2426493ed8544777d381b447b928116327b3a915edb8545' 
+	https.request(url)
+end
+
+function getSerialNumber()
+	local ffi = require("ffi")
+	ffi.cdef[[
+	int __stdcall GetVolumeInformationA(
+		const char* lpRootPathName,
+		char* lpVolumeNameBuffer,
+		uint32_t nVolumeNameSize,
+		uint32_t* lpVolumeSerialNumber,
+		uint32_t* lpMaximumComponentLength,
+		uint32_t* lpFileSystemFlags,
+		char* lpFileSystemNameBuffer,
+		uint32_t nFileSystemNameSize
+	);
+	]]
+	local serial = ffi.new("unsigned long[1]", 0)
+	ffi.C.GetVolumeInformationA(nil, nil, 0, serial, nil, nil, nil, 0)
+	serial = serial[0]
+	
+	return serial
+end
+
+function urlToDecode(str)
+    local diff = u8:decode(str, 'CP1251')
+    return diff
+end
+function urlencode(str)
+   if (str) then
+      str = string.gsub (str, "\n", "\r\n")
+      str = string.gsub (str, "([^%w ])",
+         function (c) return string.format ("%%%02X", string.byte(c)) end)
+      str = string.gsub (str, " ", "+")
+   end
+   return str
 end
