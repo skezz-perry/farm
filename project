@@ -1,4 +1,4 @@
-script_version('0.1.1 beta')
+script_version('0.1.2 beta')
 
 require 'lib.moonloader'
 local inicfg = require 'inicfg'
@@ -173,7 +173,7 @@ function main()
 		end
 	end)
 	
-	sampRegisterChatCommand('loadfarm', function()
+	sampRegisterChatCommand('fload', function()
 		if not loadfarm then
 			for index, value in pairs(ini.vegetation) do
 				local result = convertStringToTable(value)
@@ -187,8 +187,9 @@ function main()
 					global.another[index] = result
 					local b = global.another[index]
 					global.another[index].handle = createObject(b.model, b.position.x, b.position.y, b.position.z)
-					setObjectRotation(global.another[index].handle, b.rotation.x, b.rotation.y, b.rotation.z)
-					--setObjectCollision(global.another[index].handle, false)
+					setObjectCoordinates(b.handle, b.position.x, b.position.y, b.position.z)
+					setObjectRotation(b.handle, b.rotation.x, b.rotation.y, b.rotation.z)
+					setObjectCollision(b.handle, false)
 				else addChat('Произошла ошибка при попытке подгрузить объект {00CC66}' .. index .. '{e6e6fa}.') end
 			end
 			
@@ -199,7 +200,7 @@ function main()
 		end
 	end)
 	
-	sampRegisterChatCommand('reloadfarm', function()
+	sampRegisterChatCommand('freload', function()
 		addChat('Скрипт перезагружен.')
 		thisScript():reload()
 	end)
@@ -230,7 +231,7 @@ function main()
 					local object = parametrs
 					handle = createObject(object, x + 1, y + 1, z)
 
-					--setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
+					setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
 					table.insert(global.another, {
 						model = object,
 						handle = handle,
@@ -283,6 +284,7 @@ function main()
 					if tonumber(position) and tonumber(rotation) then
 						if global.another[tonumber(id)] then
 							objectValue = {tonumber(id), tonumber(position), tonumber(rotation)}
+							objectRender = true
 							addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
 						else
 							addChat('Данный объект не существует, проверьте правильность введённого ID.')
@@ -297,6 +299,7 @@ function main()
 				if not isCharSittingInAnyCar(playerPed) then
 					if global.another[tonumber(id)] then
 						objectValue = {tonumber(id), 0.01, 0.5}
+						objectRender = true
 						addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
 					else
 						addChat('Данный объект не существует, проверьте правильность введённого ID.')
@@ -309,6 +312,7 @@ function main()
 			end
 		else
 			saveObject(objectValue[1])
+			objectRender = nil
 			objectValue = nil
 		end
 	end)
@@ -488,11 +492,11 @@ function renderText()
 				name = 'Основная информация',
 				w = 305, h = 22,
 				position = {
-					x = sw + 10.5, y = sh + 68
+					x = sw + 10.5, y = sh + 58
 				},
 				tposition = {
 					x = sw + 10.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Основная информация') / 2,
-					y = sh + 73
+					y = sh + 63
 				},
 				color1 = 0xeeb22222,
 				color2 = 0xFFFFD700,
@@ -501,11 +505,11 @@ function renderText()
 				name = 'Информациях о обновлениях',
 				w = 305, h = 22,
 				position = {
-					x = sw + 335.5, y = sh + 68
+					x = sw + 335.5, y = sh + 58
 				},
 				tposition = {
 					x = sw + 335.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Информация о обновлениях') / 2,
-					y = sh + 73
+					y = sh + 63
 				},
 				color1 = 0xeeb22222,
 				color2 = 0xFFFFD700,
@@ -638,22 +642,6 @@ function renderText()
 	end
 	
 	local function renderEditor()
-		if isKeyDown(0x1) then
-			local mx, my = getCursorPos()
-			if (mx > sw + 635 and mx < sw + 651) and (my > sh + 373 and my < sh + 389) then
-				render_menu = not render_menu
-			elseif (mx > sw + 610 and mx < sw + 630) and (my > sh + 373 and my < sh + 393) then
-				sw, sh = mx - 620, my - 383
-				boolConvertUserTable = false
-				upUpdate(sw, sh)
-			elseif menuElement == 2 then
-				if (mx > sw + 585 and mx < sw + 601) and (my > sh + 373 and my < sh + 389) then
-					getUsers(true)
-					boolConvertUserTable = false
-				end
-			end
-		end
-		
 		if not editorTexture then
 			local pathl = {'close', 'move', 'reload'}
 			editorTexture = {}
@@ -667,6 +655,22 @@ function renderText()
 		renderDrawTexture(editorTexture[2], sw + 610, sh + 373, 16, 16, 0, 0xffffffff)
 		if menuElement == 2 then
 			renderDrawTexture(editorTexture[3], sw + 585, sh + 373, 16, 16, 0, 0xffffffff)
+		end
+	
+		if isKeyDown(0x1) then
+			local mx, my = getCursorPos()
+			if (mx > sw + 610 and mx < sw + 630) and (my > sh + 373 and my < sh + 393) then
+				sw, sh = mx - 620, my - 383
+				boolConvertUserTable = false
+				upUpdate(sw, sh)
+			elseif (mx > sw + 635 and mx < sw + 651) and (my > sh + 373 and my < sh + 389) then
+				render_menu = not render_menu
+			elseif menuElement == 2 then
+				if (mx > sw + 585 and mx < sw + 601) and (my > sh + 373 and my < sh + 389) then
+					getUsers(true)
+					boolConvertUserTable = false
+				end
+			end
 		end
 	end
 	
@@ -743,11 +747,12 @@ function renderText()
 					sampSetCursorMode(3)
 				end
 				
-				renderBoxRounded(sw, sh, w, h, 5, 0xee18171c)
+				renderBoxRounded(sw, sh, w, h, 5, 0xee333333)
 				local result = renderButton(listButton)
 				if result then menuElement = result end
 				
-				renderDrawBox(sw + 10, sh + 45, w - 20, 1.8, 0x66ffffff)
+				renderBoxRounded(sw, sh + 40, w, h - 40, 5, 0xee18171c)
+				--renderDrawBox(sw + 10, sh + 45, w - 20, 1.8, 0x66ffffff)
 				renderEditor()
 				
 				if menuElement == 1 then
@@ -756,7 +761,7 @@ function renderText()
 					
 					if menuOneElement == 2 then
 					else
-						renderCenteredText(defaultInfoText, {x = sw + 10, y = sh + 100, w = 629})
+						renderCenteredText(defaultInfoText, {x = sw + 10, y = sh + 90, w = 629})
 					end
 				end
 				
@@ -796,6 +801,7 @@ function renderText()
 					if distance < 100 then
 						if not value.handle then
 							global.vegetation[index].handle = createObject(value.model, x, y, z - value.fix)
+							setObjectCollision(global.vegetation[index].handle, false)
 						end
 						
 						if distance < 7 then
@@ -918,7 +924,7 @@ function renderText()
 					if distance < 10 then
 						if isPointOnScreen(v.position.x, v.position.y, v.position.z) then
 							local sx, sy = convert3DCoordsToScreen(v.position.x, v.position.y, v.position.z)
-							renderFontDrawText(font, 'ID ' .. tostring(index), sx, sy, 0xFFFFFFFF)
+							renderFontDrawText(font, 'ID ' .. tostring(index) .. '\nMODEL ' .. tostring(v.model), sx, sy, 0xFFFFFFFF)
 						end
 					end
 				end
