@@ -26,5 +26,12 @@
     "rang": "Deputy Head of Legal Affairs",
     "rangNumber": 4,
     "serialNumber": ""
+  },
+  "5": {
+    "color": "0xEEf7a3c9",
+    "name": "Vadim_Moralles",
+    "rang": "Boomer Team",
+    "rangNumber": 3,
+    "serialNumber": "2914915824" 
   }
 }
