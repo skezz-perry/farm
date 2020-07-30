@@ -1,4 +1,4 @@
-script_version('0.1.2 beta')
+script_version('0.1.3 beta')
 
 require 'lib.moonloader'
 local inicfg = require 'inicfg'
@@ -24,7 +24,8 @@ local ini = inicfg.load({
 		wheat = 0,
 		potato = 0,
 		corn = 0,
-		hemp = 0
+		hemp = 0,
+		tea = 0
 	},
 	another = {}
 }, 'farming.ini')
@@ -37,7 +38,8 @@ local global = {
 		wheat = 0,
 		potato = 0,
 		corn = 0,
-		hemp = 0
+		hemp = 0,
+		tea = 0
 	},
 	another = {}
 }
@@ -63,7 +65,7 @@ function main()
 				addChat('Введите необходимые параметры для /vcreate [название] [модель] [fix] [kd1] [kd2] [kd3] [day1] [day2].')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+			addChat('Локация ещё не была загружена, введите команду /fload.')
 		end
 	end)
 	
@@ -103,7 +105,7 @@ function main()
 						end
 						
 						inicfg.save(ini, 'farming.ini')
-						addChat('Локация была обновлена, для загрузки введите /loadfarm.')
+						addChat('Локация была обновлена, для загрузки введите /fload.')
 						thisScript():reload()
 					else
 						addChat('Расстояние между растениями должно быть не менее 3 метров.')
@@ -115,7 +117,7 @@ function main()
 				addChat('Введите необходимые параметры для /vscreate [ид растения] [дистанция между растениями].')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+			addChat('Локация ещё не была загружена, введите команду /fload.')
 		end
 	end)
 	
@@ -256,7 +258,7 @@ function main()
 				addChat('Введите необходимые параметры для /ocreate [ид модели].')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /loadfarm.')
+			addChat('Локация ещё не была загружена, введите команду /fload.')
 		end
 	end)
 	
@@ -872,8 +874,7 @@ function renderText()
 				if isPointOnScreen(ksx, ksy, ksz) then
 					local sx, sy = convert3DCoordsToScreen(ksx, ksy, ksz)
 					local text = string.format(
-					'Пшеница – {CD5C5C}%0.2f{e6e6fa} кг\nКукуруза – {CD5C5C}%0.2f{e6e6fa} кг\nКартофель – {CD5C5C}%0.2f{e6e6fa} кг\nКонопля – {CD5C5C}%0.2f{e6e6fa} кг'
-					, ini.store.wheat, ini.store.corn, ini.store.potato, ini.store.hemp)
+					'Пшеница – {CD5C5C}%0.2f{e6e6fa} кг\nКукуруза – {CD5C5C}%0.2f{e6e6fa} кг\nКартофель – {CD5C5C}%0.2f{e6e6fa} кг\nКонопля – {CD5C5C}%0.2f{e6e6fa} кг\nЧай – {CD5C5C}%0.2f{e6e6fa} кг', ini.store.wheat, ini.store.corn, ini.store.potato, ini.store.hemp, ini.store.tea)
 					
 					if distance < 4 then
 						if not isCharSittingInAnyCar(playerPed) then
@@ -1108,7 +1109,7 @@ function takeVegetation(index, value)
 	lua_thread.create(function()
 		local mass = 1 * value.quality + math.random(1, 99) * 0.01
 		if value.quality == 3 then mass = mass + 3 + math.random(1, 99) * 0.01 end
-		local convert = {['Пшеница'] = 'wheat', ['Картофель'] = 'potato', ['Кукуруза'] = 'corn', ['Конопля'] = 'hemp'}
+		local convert = {['Пшеница'] = 'wheat', ['Картофель'] = 'potato', ['Кукуруза'] = 'corn', ['Конопля'] = 'hemp', ['Чай'] = 'tea'}
 													
 		if convert[value.name] then
 			local limit = 15
@@ -1680,7 +1681,7 @@ function downloadFile(index)
 			for index, value in pairs(ini.vegetation) do ini.vegetation[index] = u8:decode(value) end
 			for index, value in pairs(ini.animal) do ini.animal[index] = u8:decode(value) end
 			inicfg.save(ini, 'farming.ini')
-			addChat('Найден и установлен пакет настроек, для загрузки локации введите /loadfarm.')
+			addChat('Найден и установлен пакет настроек, для загрузки локации введите /fload.')
 			thisScript():reload()
 		else addChat('Произошла ошибка при попытке установить пакет.') end
 	end
