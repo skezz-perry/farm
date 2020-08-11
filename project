@@ -1,9 +1,10 @@
-script_version('0.1.3 beta')
+script_version('0.1.4 beta')
 
 require 'lib.moonloader'
 local inicfg = require 'inicfg'
 local vkeys = require 'vkeys'
 local font_flag = require('moonloader').font_flag
+local imgui = require 'imgui'
 local encoding = require 'encoding'
 local memory = require 'memory'
 local https = require 'ssl.https'
@@ -16,7 +17,15 @@ local font = renderCreateFont('Arial', 8.2, font_flag.BOLD + font_flag.SHADOW)
 local mfont = renderCreateFont('Century Gothic', 8.4, font_flag.BOLD)
 local ufont = renderCreateFont('Century Gothic', 8.4, font_flag.BOLD)
 
+local globalPlayerRang = 1
+local selectionPoint = 1
+local render_draw_menu = imgui.ImBool(false)
+local render_draw_selection = imgui.ImBool(false)
+
 local ini = inicfg.load({
+	user = {
+		autoloadfarm = false
+	},
 	vegetation = {},
 	animal = {},
 	store = {
@@ -44,7 +53,303 @@ local global = {
 	another = {}
 }
 
-local qualityValue = {[1] = '{6495ED}Низкое', [2] = 'Среднее', [3] = '{CD5C5C}Высокое'}
+local defaultInfoText = {
+	'Данный скрипт является дополнением для полноценной работы крестьянско-фермерского хозяйства «Комета».',
+	'Его основной задачей является дополнение игрового окружения различными объектами и интерфейсами.',
+	'~',
+	'Если Вы будете использовать возможности данного скрипта в корыстных целях, то вы будете заблокированы..',
+	'.. как на сервере, администрацией, так и в самом скрипте. Обжалование подобных блокировок невозможно.',
+	'~',
+	'Важно! При использовании данного скрипта вы соглашаетесь предоставлять информацию о вашем игровом нике,',
+	'ip-адрессе сервера, на которым вы авторизовались, и о серийном номере вашего логического диска (для более..',
+	'.. корректной идентификации вас как пользователя скрипта).',
+	'~',
+	'Разработчик Joachim Ribbentrop (Skezz Perry)',
+	'Версия скрипта ' .. thisScript().version
+}
+
+local informationOfCommands = {
+	[1] = {
+		name = 'fmenu',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – отсутствуют.',
+		},
+		description = {
+			'Отображает основное меню.'
+		}
+	},
+	[2] = {
+		name = 'fsmenu',
+		access = 2,
+		parametrs = {
+			'Необходимые параметры – отсутствуют.',
+		},
+		description = {
+			'Отображает меню для селекции растений.'
+		}
+	},
+	[3] = {
+		name = 'fload',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – отсутствуют.',
+		},
+		description = {
+			'Загружает объекты, растения и животных в глобальный мир.'
+		}
+	},
+	[4] = {
+		name = 'freload',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – отсутствуют.',
+		},
+		description = {
+			'Перезагружает игровой помощник, очищает глобальный мир от созданных объектов.'
+		}
+	},
+	[5] = {
+		name = 'vcreate',
+		access = 3,
+		parametrs = {
+			'Необходимые параметры – [название] [модель] [fix] [kd1] [kd2] [kd3] [day1] [day2].',
+			'{ff4747}Название{dbede3} – Наименование растение.',
+			'{ff4747}Модель{dbede3} – ID модели объекта SAMP.',
+			'{ff4747}FIX{dbede3} – Исправление координаты по оси Z.',
+			'{ff4747}KD1{dbede3} – Число дней, через которое растение начнёт требовать полив.',
+			'{ff4747}KD2{dbede3} – Число дней, через которое растение погибнет от засухи.',
+			'{ff4747}KD3{dbede3} – Число дней, через которое растение будет готово к сбору.',
+			'{ff4747}DAY1{dbede3} – День месяца последнего полива растения.',
+			'{ff4747}DAY2{dbede3} – День месяца, когда растение было посажено.'
+		},
+		description = {
+			'Описание временно не доступно.'
+		}
+	},
+	[6] = {
+		name = 'vscreate',
+		access = 3,
+		parametrs = {
+			'Необходимые параметры – [ид растения] [дистанция между растениями].',
+			'{ff4747}ID растения{dbede3} – ID растения, с которого необходимо произвести копирование.',
+			'{ff4747}Дистания между растениями{dbede3} – Расстояние между растениями.',
+		},
+		description = {
+			'Описание временно не доступно.'
+		}
+	},
+	[7] = {
+		name = 'vdelete',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – [ид растения] (последний ид).',
+			'{ff4747}ID растения{dbede3} – ID растения с которого нужно начать удаление.',
+			'{ff4747}Последний ID{dbede3} – ID растения по который, включительно, нужно удалить растения.',
+		},
+		description = {
+			'Удаляет одно или несколько растений с глобальной карты и исключает их из файла конфигурации.'
+		}
+	},
+	[8] = {
+		name = 'vsave',
+		access = 3,
+		parametrs = {
+			'Необходимые параметры – [ид растения].',
+			'{ff4747}ID растения{dbede3} – ID растения, которое нужно сохранить.',
+		},
+		description = {
+			'Сохраняет растение и его настройки в файле конфигурации (неактуально).'
+		}
+	},
+	[9] = {
+		name = 'orender',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – отсутсвуют.'
+		},
+		description = {
+			'Отображает ID объектов из локального файла конфигурации и ID их моделей.'
+		}
+	},
+	[10] = {
+		name = 'ocreate',
+		access = 3,
+		parametrs = {
+			'Необходимые параметры – [ид модели] (ид объекта).',
+			'{ff4747}ID модели{dbede3} – ID модели объекта SAMP.',
+			'{ff4747}ID объекта{dbede3} – ID объекта, с которого нужно скопировать позицию.'
+		},
+		description = {
+			'Создаёт визуальный объект без коллизии.'
+		}
+	},
+	[11] = {
+		name = 'oedit',
+		access = 3,
+		parametrs = {
+			'Необходимые параметры – [ид объекта] (скорость движения) (скорость вращения).',
+			'{ff4747}ID объекта{dbede3} – ID объекта из локального файла конфигурации.',
+			'{ff4747}Скорость движения{dbede3} – Скорость с которой будет двигаться объект.',
+			'{ff4747}Скорость вращения{dbede3} – Скорость с которой будет вращаться объект.'
+		},
+		description = {
+			'Позволяет редактировать положение объекта в пространстве.',
+			'При зажатой клавише ПКМ объект будет вращаться по указанным ниже осям.',
+			'{ff4747}Num 2 (8){dbede3} – Изменить позицию объекта по оси Y.',
+			'{ff4747}Num 4 (6){dbede3} – Изменить позицию объекта по оси X.',
+			'{ff4747}Left Alt и Space{dbede3} – Изменить позицию объекта по оси Z.'
+		}
+	},
+	[12] = {
+		name = 'odelete',
+		access = 1,
+		parametrs = {
+			'Необходимые параметры – [ид объекта].',
+			'{ff4747}ID объекта{dbede3} – ID объекта из локального файла конфигурации.',
+		},
+		description = {
+			'Удаляет загруженный объект с глобальный карты и исключает его из файла конфигурации.'
+		}
+	},
+	[13] = {
+		name = 'anims',
+		access = 5,
+		parametrs = {
+			'Необходимые параметры – [ид анимации].',
+			'{ff4747}ID анимации{dbede3} – ID анимации, которую нужно проиграть.',
+		},
+		description = {
+			'Активирует (или очищает все анимации) анимацию из локального списка.'
+		}
+	},
+	[14] = {
+		name = 'iconvert',
+		access = 5,
+		parametrs = {
+			'Необходимые параметры – отсутсвуют.'
+		},
+		description = {
+			'Конвертирует и копирует в буффер-обмена информацию из файла конфигурации.'
+		}
+	},
+	[15] = {
+		name = 'coords',
+		access = 5,
+		parametrs = {
+			'Необходимые параметры – отсутсвуют.'
+		},
+		description = {
+			'Копирует текущие координаты персонажа в буффер-обмена.'
+		}
+	}
+}
+
+local qualityValue = {[1] = '{FFC74E}Низкая', [2] = '{28D664}Средняя', [3] = '{FF6E4E}Высокая'}
+
+local scriptColor = {
+	['{RED}'] = {'{FF6E4E}', 0xFFFF6E4E},
+	['{GREEN}'] = {'{28D664}', 0xFF28D664},
+	['{YELLOW}'] = {'{FFC74E}', 0xFFFFC74E},
+	['{CLEAR}'] = {'{e6e6fa}', 0xFFe6e6fa}
+}
+
+local selectionEvent = {
+	[1] = {
+		position = {x = 1051.8305664063, y = -313.32299804688, z = 73.99308013916},
+		text = {
+			[1] = '{28D664}Шкаф с растениями.{e6e6fa} Нажмите {FFC74E}RButt + Alt{e6e6fa}, чтобы достать растения.',
+			[2] = '{28D664}Шкаф с растениями.{e6e6fa} Процесс...',
+			ELSE = '{28D664}Шкаф с растениями.{e6e6fa} Сейчас это Вам недоступно.'
+		},
+		callback = {
+			[1] = function()
+				lua_thread.create(function()
+					selectionPoint = 2
+					printStringNow('Drawer opens, ~y~wait~w~...', 2480)
+					lockPlayerControl(true) playAnim('INT_SHOP shop_loop') wait(2500) lockPlayerControl(false) playAnimStatus = true
+					
+					addChat('Если Вы {YELLOW}случайно закрыли ImGui-меню{CLEAR}, то можно открыть его снова командой /fsmenu.')
+					render_draw_selection.v = true
+					stopLoadingSelection = nil 
+				end)
+			end
+		}
+	},
+	[2] = {
+		position = {x = 1042.0600585938, y = -303.2822265625, z = 73.99308013916},
+		text = {
+			[3] = '{28D664}Анализатор.{e6e6fa} Для начала исследования нажмите {FFC74E}RButt + Alt{e6e6fa}.',
+			[4] = '{28D664}Анализатор.{e6e6fa} Процесс...',
+			[6] = '{28D664}Анализатор.{e6e6fa} Для начала исследования нажмите {FFC74E}RButt + Alt{e6e6fa}.',
+			[7] = '{28D664}Анализатор.{e6e6fa} Процесс...',
+			ELSE = '{28D664}Анализатор.{e6e6fa} Сейчас это Вам недоступно.'
+		},
+		callback = {
+			[3] = function()
+				lua_thread.create(function()
+					selectionPoint = 4
+					lockPlayerControl(true)
+					playAnim('INT_SHOP shop_cashier')
+					printStringNow('Putting samples in the device, ~y~wait~w~...', 4480)
+					wait(2500) 
+					playAnim(0)
+					playAnim('INT_SHOP shop_loop')
+					wait(2000)
+					
+					lockPlayerControl(false) playAnimStatus = true
+						
+					addChat('Если Вы {YELLOW}случайно закрыли ImGui-меню{CLEAR}, то можно открыть его снова командой /fsmenu.')
+					render_draw_selection.v = true
+					stopLoadingSelection = nil
+				end)
+			end,
+			[6] = function()
+				lua_thread.create(function()
+					playAnim('INT_SHOP shop_cashier')
+						
+					selectionPoint = 7
+					lockPlayerControl(true)
+					printStringNow('Putting samples in the device, ~y~wait~w~...', 4480)
+					wait(2500)
+					playAnim(0)
+					playAnim('INT_SHOP shop_loop')
+					wait(2000)
+					
+					lockPlayerControl(false) playAnimStatus = true
+				
+					addChat('Если Вы {YELLOW}случайно закрыли ImGui-меню{CLEAR}, то можно открыть его снова командой /fsmenu.')
+					render_draw_selection.v = true
+					stopLoadingSelection = nil
+				end)
+			end
+		}
+	},
+	[3] = {
+		position = {x = 1039.6477050781, y = -312.57791137695, z = 73.99308013916},
+		text = {
+			[5] = '{28D664}Рабочее место №1.{e6e6fa} Для проведения скрещевания растений нажмите {FFC74E}RButt + Alt{e6e6fa}.',
+			ELSE = '{28D664}Рабочее место №1.{e6e6fa} Сейчас это Вам недоступно.'
+		},
+		callback = {
+			[5] = function()
+				--addChat('Если Вы {YELLOW}случайно закрыли ImGui-меню{CLEAR}, то можно открыть его снова командой /fsmenu.')
+				render_draw_selection.v = true
+				stopLoadingSelection = nil
+				--selectionPoint = 6
+			end
+		}
+	},
+	[4] = {
+		position = {x = 1040.2897949219, y = -306.2, z = 73.99308013916},
+		text = {
+			ELSE = '{28D664}Рабочее место №2.{e6e6fa} Сейчас это Вам недоступно.'
+		},
+		callback = {
+			--[1] = function() addChat('Открываем меню для события...') end
+		}
+	}
+}
 
 function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
@@ -52,24 +357,58 @@ function main()
 	
 	autoUpdate('https://raw.githubusercontent.com/skezz-perry/farm/master/version', 'https://raw.githubusercontent.com/skezz-perry/farm/master/project')
 
+	sampRegisterChatCommand('spoint', function(point)
+		if globalPlayerRang < 5 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+		
+		if tonumber(point) then
+			if tonumber(point) > 4 and not selectionResult then
+				addChat('Без выполнения {YELLOW}4 этапа {RED}невозможно продолжить работу{CLEAR} над селекцией.')
+				return
+			end
+			
+			selectionPoint = tonumber(point)
+			addChat(string.format('Вы {GREEN}установили значение этапа{CLEAR} селекции на {YELLOW}%s{CLEAR}.', point))
+		else
+			addChat('Введите необходимые параметры для /spoint [point].')
+		end
+	end)
+	
 	sampRegisterChatCommand('coords', function()
+		if globalPlayerRang < 5 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+		
 		local x, y, z = getCharCoordinates(playerPed)
 		setClipboardText(x .. ', ' .. y .. ', ' .. z)
 	end)
 
 	sampRegisterChatCommand('vcreate', function(parametrs)
+		if globalPlayerRang < 3 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		if loadfarm then
-			if string.match(parametrs, '(%S+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)') then
+			if string.match(parametrs, '(%S+) (%d+) (%S+) (%d+) (%d+) (%d+) (%d+) (%d+)') then
 				createVegs(parametrs)
 			else
 				addChat('Введите необходимые параметры для /vcreate [название] [модель] [fix] [kd1] [kd2] [kd3] [day1] [day2].')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /fload.')
+			addChat('Локация ещё {YELLOW}не была загружена{CLEAR}. Для её загрузки введите команду /fload.')
 		end
 	end)
 	
 	sampRegisterChatCommand('vscreate', function(parametrs)
+		if globalPlayerRang < 3 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		if loadfarm then
 			if string.match(parametrs, '(%d+) (%d+)') then
 				local index, distance = string.match(parametrs, '(%d+) (%d+)')
@@ -93,10 +432,7 @@ function main()
 										table.insert(global.vegetation, #ini.vegetation + 1, global.vegetation[#global.vegetation])
 										global.vegetation[#global.vegetation].position.x = x
 										global.vegetation[#global.vegetation].position.y = y
-										local quality = math.random(1, 99)
-										if quality > 40 and quality < 50 then quality = 3
-										elseif quality > 0 and quality <= 40 then quality = 2
-										else quality = 1 end
+										local quality = getRandomQuality()
 										global.vegetation[#global.vegetation].quality = quality
 										saveVegetation(#global.vegetation, true)
 									end
@@ -105,23 +441,28 @@ function main()
 						end
 						
 						inicfg.save(ini, 'farming.ini')
-						addChat('Локация была обновлена, для загрузки введите /fload.')
+						addChat('Вы {GREEN}успешно размножили{CLEAR} растение по заданной площади. Требуется {YELLOW}загрузка локации{CLEAR} (/fload).')
 						thisScript():reload()
 					else
-						addChat('Расстояние между растениями должно быть не менее 3 метров.')
+						addChat('Расстояние между растениями {YELLOW}не должно быть менее 3х метров{CLEAR}.')
 					end
 				else
-					addChat('Данного растения не существует, проверьте правильность ID.')
+					addChat(' не существует, проверьте правильность ID.')
 				end
 			else
 				addChat('Введите необходимые параметры для /vscreate [ид растения] [дистанция между растениями].')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /fload.')
+			addChat('Локация ещё {YELLOW}не была загружена{CLEAR}. Для её загрузки введите команду /fload.')
 		end
 	end)
 	
 	sampRegisterChatCommand('vdelete', function(parametrs)
+		if globalPlayerRang < 3 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		if string.match(parametrs, '(%d+) (%d+)') then
 			local _index, last = string.match(parametrs, '(%d+) (%d+)')
 			local _index, last = tonumber(_index), tonumber(last)
@@ -142,7 +483,7 @@ function main()
 			end
 			
 			inicfg.save(ini, 'farming.ini')
-			addChat('Растения успешно удалены.')
+			addChat('Вы {GREEN}успешно удалили растения{CLEAR} в заданном диапозоне, информация о них была удалена.')
 		elseif string.match(parametrs, '(%d+)') then
 			local index = tonumber(string.match(parametrs, '(%d+)'))
 			if index then
@@ -156,9 +497,9 @@ function main()
 					global.vegetation[index] = nil
 					ini.vegetation[index] = nil
 					inicfg.save(ini, 'farming.ini')
-					addChat('Растение успешно удалено.')
+					addChat('Вы {GREEN}успешно удалили растение{CLEAR}, информация о нём была удалена.')
 				else
-					addChat('Данное растение не существует, проверьте правильность введённого ID.')
+					addChat('Растение с таким ID {RED}не было найдено{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 				end
 			end
 		else
@@ -167,6 +508,11 @@ function main()
 	end)
 	
 	sampRegisterChatCommand('vsave', function(index)
+		if globalPlayerRang < 3 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		local index = tonumber(index)
 		if index then
 			saveVegetation(index)
@@ -175,39 +521,19 @@ function main()
 		end
 	end)
 	
-	sampRegisterChatCommand('fload', function()
-		if not loadfarm then
-			for index, value in pairs(ini.vegetation) do
-				local result = convertStringToTable(value)
-				if result then global.vegetation[index] = result
-				else addChat('Произошла ошибка при попытке подгрузить растение {00CC66}' .. index .. '{e6e6fa}.') end
-			end
-			
-			for index, value in pairs(ini.another) do
-				local result = convertStringToTable(value)
-				if result then 
-					global.another[index] = result
-					local b = global.another[index]
-					global.another[index].handle = createObject(b.model, b.position.x, b.position.y, b.position.z)
-					setObjectCoordinates(b.handle, b.position.x, b.position.y, b.position.z)
-					setObjectRotation(b.handle, b.rotation.x, b.rotation.y, b.rotation.z)
-					setObjectCollision(b.handle, false)
-				else addChat('Произошла ошибка при попытке подгрузить объект {00CC66}' .. index .. '{e6e6fa}.') end
-			end
-			
-			loadfarm = true
-			addChat('Локация загружена.')
-		else
-			addChat('Локация уже была загружена.')
-		end
-	end)
+	sampRegisterChatCommand('fload', loading_farm)
 	
 	sampRegisterChatCommand('freload', function()
-		addChat('Скрипт перезагружен.')
+		addChat('Игровой помощник был {GREEN}успешно перезагружен{CLEAR}. Не забывайте загружать локацию (/fload).')
 		thisScript():reload()
 	end)
 	
 	sampRegisterChatCommand('iconvert', function()
+		if globalPlayerRang < 5 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		local function updateString()
 			local _table = ini
 			for index, value in pairs(_table.vegetation) do _table.vegetation[index] = u8(value) end
@@ -216,49 +542,97 @@ function main()
 		end
 		
 		setClipboardText(encodeJson(updateString()))
-		addChat('В ваш буфер обмена был сохранён ini-файл в формате json.')
+		addChat('В ваш буфер обмена был {GREEN}сохранён{CLEAR} ini-файл в формате json.')
 	end)
 	
-	sampRegisterChatCommand('anims', function(id)
-		if tonumber(id) then
-			playAnim(id)
+	sampRegisterChatCommand('anims', function(parametrs)
+		if globalPlayerRang < 5 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
+		if tonumber(parametrs) then
+			playAnim(parametrs)
+		elseif string.match(parametrs, '(%S+) (%S+)') then
+			playAnim(parametrs)
+		else
+			addChat('Введите необходимые параметры для /anims [ид анимации] или [library] [name].')
 		end
 	end)
 	
 	sampRegisterChatCommand('ocreate', function(parametrs)
+		if globalPlayerRang < 3 then 
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		if loadfarm then
-			if tonumber(parametrs) then
+			if string.match(parametrs, '(%d+) (%d+)') or tonumber(parametrs) then
 				if not isCharSittingInAnyCar(playerPed) then
+					local object, point
+					if string.match(parametrs, '(%d+) (%d+)') then
+						object, point = string.match(parametrs, '(%d+) (%d+)')
+					elseif tonumber(parametrs) then
+						object = parametrs
+					end
+				
 					local x, y, z = getCharCoordinates(playerPed)
-					local object = parametrs
-					handle = createObject(object, x + 1, y + 1, z)
-
-					setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
-					table.insert(global.another, {
-						model = object,
-						handle = handle,
-						position = {
-							x = x + 1,
-							y = y + 1,
-							z = z
-						},
-						rotation = {
-							x = 0,
-							y = 0,
-							z = 0
-						}
-					})
 					
-					addChat(string.format('Вы создали объект, его уникальный ID {00CC66}%d{e6e6fa} [%d].', #global.another, handle))
+					if point then
+						if not (global.another[tonumber(point)] or type(global.another[tonumber(point)]) == 'table') then
+							addChat('Объект с таким ID {RED}не был найден{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
+							return
+						end
+						
+						copy = global.another[tonumber(point)]
+						
+						handle = createObject(object, copy.position.x, copy.position.y, copy.position.z)
+						setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
+						
+						table.insert(global.another, {
+							model = object,
+							handle = handle,
+							position = {
+								x = copy.position.x,
+								y = copy.position.y,
+								z = copy.position.z
+							},
+							rotation = {
+								x = copy.rotation.x,
+								y = copy.rotation.y,
+								z = copy.rotation.z
+							}
+						})
+					else
+						handle = createObject(object, x + 1, y + 1, z)
+
+						setObjectCollision(handle, false) -- КОЛИЗИЯ ОБЪЕКТА
+						table.insert(global.another, {
+							model = object,
+							handle = handle,
+							position = {
+								x = x + 1,
+								y = y + 1,
+								z = z
+							},
+							rotation = {
+								x = 0,
+								y = 0,
+								z = 0
+							}
+						})
+					end
+					
+					addChat(string.format('Вы {GREEN}успешно создали{CLEAR} объект, его уникальный ID {YELLOW}%d{CLEAR} [H %d] [M %d].', #global.another, handle, object))
 					saveObject(#global.another, true)
 				else
-					addChat('Вы не должны находится в транспорте.')
+					addChat('Для создания объекта Вы {YELLOW}не должны находится в транспорте{CLEAR}.')
 				end
 			else
-				addChat('Введите необходимые параметры для /ocreate [ид модели].')
+				addChat('Введите необходимые параметры для /ocreate [ид модели] (ид объекта).')
 			end
 		else
-			addChat('Локация ещё не была загружена, введите команду /fload.')
+			addChat('Локация ещё {YELLOW}не была загружена{CLEAR}. Для её загрузки введите команду /fload.')
 		end
 	end)
 	
@@ -269,9 +643,9 @@ function main()
 				ini.another[tonumber(id)] = nil
 				global.another[tonumber(id)] = nil
 				inicfg.save(ini, 'farming.ini')
-				addChat('Объект успешно удалён.')
+				addChat('Вы {GREEN}успешно удалили объект{CLEAR}, информация о нём была удалена.')
 			else
-				addChat('Данный объект не существует, проверьте правильность введённого ID.')
+				addChat('Объект с таким ID {RED}не был найден{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 			end
 		else
 			addChat('Введите необходимые параметры для /odelete [ид модели].')
@@ -279,6 +653,11 @@ function main()
 	end)
 	
 	sampRegisterChatCommand('oedit', function(id)
+		if globalPlayerRang < 3 then
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+	
 		if not objectValue then
 			if string.match(id, '(%d+) (%S+), (%S+)') then
 				if not isCharSittingInAnyCar(playerPed) then
@@ -289,13 +668,13 @@ function main()
 							objectRender = true
 							addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
 						else
-							addChat('Данный объект не существует, проверьте правильность введённого ID.')
+							addChat('Объект с таким ID {RED}не был найден{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 						end
 					else
 						addChat('Введите необходимые параметры для /oedit [ид объекта] (скорость движения), (скорость вращения).')
 					end
 				else
-					addChat('Вы не должны находится в транспорте.')
+					addChat('Для редактирования объекта Вы {YELLOW}не должны находится в транспорте{CLEAR}.')
 				end
 			elseif tonumber(id) then
 				if not isCharSittingInAnyCar(playerPed) then
@@ -304,10 +683,10 @@ function main()
 						objectRender = true
 						addChat('Вы начали редактирование объекта. Для остановки введите команду ещё раз.')
 					else
-						addChat('Данный объект не существует, проверьте правильность введённого ID.')
+						addChat('Объект с таким ID {RED}не был найден{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 					end
 				else
-					addChat('Вы не должны находится в транспорте.')
+					addChat('Для редактирования объекта Вы {YELLOW}не должны находится в транспорте{CLEAR}.')
 				end
 			else
 				addChat('Введите необходимые параметры для /oedit [ид объекта] (скорость движения), (скорость вращения).')
@@ -319,31 +698,41 @@ function main()
 		end
 	end)
 	
-	sampRegisterChatCommand('daccept', function(parametrs)
-		if acceptDownload then
-			if tonumber(parametrs) then
-				local code = tonumber(parametrs)
-				local convert = {'vegetation', 'animal', 'another', 'icon'}
-				
-				if acceptDownload[2] == code then
-					if convert[acceptDownload[1]] then
-						downloadFile(convert[acceptDownload[1]])
-						acceptDownload = nil
-					else addChat('Произошла ошибка при попытке идентифицировать пакет.') acceptDownload = nil end
-				else addChat('Вы ввели неверный код подтверждения.') end
-			else addChat('Введите необходимые параметры для /daccept [код подтверждения].') end
-		else addChat('В данный момент нет активных подтверждений.') end
-	end)
+	--[[sampRegisterChatCommand('oset', function(parametrs)
+		if string.match(parametrs, '') then
+		end
+	end)--]]
 	
 	sampRegisterChatCommand('orender', function()
 		objectRender = not objectRender
-		addChat('Вы ' .. (objectRender and '{00CC66}включили' or '{B22222}выключили') .. '{e6e6fa} отображение идентификаторов объектов.')
+		addChat('Вы успешно изменили состояние отображения ID объектов на ' .. (objectRender and '{GREEN}ON' or '{RED}OFF') .. '{CLEAR}.')
 	end)
 	
 	sampRegisterChatCommand('fmenu', function()
-		render_menu = not render_menu
+		render_draw_menu.v = not render_draw_menu.v
 	end)
 	
+	sampRegisterChatCommand('fsmenu', function()
+		if globalPlayerRang < 2 then
+			addChat('Для работы с данным функционалом {RED}требуется более высокий уровень{CLEAR} полномочий.')
+			return
+		end
+		
+		local points, found = {2, 4}
+		for index, value in pairs(points) do
+			if selectionPoint == value then
+				render_draw_selection.v = not render_draw_selection.v
+				found = true
+				break
+			end
+		end
+		
+		if not found then
+			addChat('Сейчас Вы {YELLOW}не можете открыть{CLEAR} ImGui-окно для работы над селекцией.')
+		end
+	end)
+	
+	apply_custom_style()
 	lua_thread.create(renderText)
 	lua_thread.create(editObject)
 	while true do wait(0)
@@ -358,8 +747,522 @@ function main()
 				end
 				sendModeratorGroup(text, true)
 				normalSerial, foundPlayerInList = false, false
+				
+				if not loadfarm and ini.user.autoloadfarm then
+					loading_farm(true)
+				end
 			end
 		end
+		
+		if render_draw_menu.v or render_draw_selection.v then
+			imgui.Process = true
+		else 
+			if playAnimStatus then playAnim(0) playAnimStatus = false end
+			imgui.Process = false 
+		end
+	end
+end
+
+function renderSwitchCommandsTableInImguiBlock(array, switch)
+	if array and type(array) == 'table' then
+		imgui.BeginChild('##blockINblock1', imgui.ImVec2(120, 407), true, imgui.WindowFlags.VerticalScrollbar)
+			for index, value in ipairs(array) do
+				if globalPlayerRang >= value.access then
+					if imgui.Button(value.name, imgui.ImVec2(108, 20)) then switch = index end
+				end
+			end
+		imgui.EndChild() imgui.SameLine()
+		
+		imgui.BeginChild('##blockINblock2', imgui.ImVec2(598, 407), true, imgui.WindowFlags.VerticalScrollbar)
+			if switch then
+				
+				imgui.TextColoredRGB(string.format('{dbede3}Наименование команды – /{BFFFB4}%s', array[switch].name))
+				imgui.TextColoredRGB(string.format('{dbede3}Уровень доступа – {BFFFB4}%s', array[switch].access))
+				
+				imgui.Text('')
+				renderTableInImguiBlock(array[switch].parametrs)
+				
+				imgui.Text('')
+				renderTableInImguiBlock(array[switch].description)
+				
+			else
+				imgui.SetCursorPosY(178)
+				imgui.CenterTextColoredRGB('Для просмотра информации выберите любую команду из левого блока.')
+			end
+		imgui.EndChild()
+		
+		return switch
+	else
+		imgui.CenterTextColoredRGB('ERROR!')
+	end
+end
+
+function renderTableInImguiBlock(information, bool)
+	if information and type(information) == 'table' then
+		for index, value in pairs(information) do
+			if bool then imgui.CenterTextColoredRGB(value)
+			else imgui.TextColoredRGB(value) end
+		end
+	end
+end
+
+function renderProgressStudy(tclock, aclock, bool)
+	local progress = os.clock() - tclock
+						
+	if progress < aclock then
+		if not bool then imgui.CenterTextColoredRGB('Производится исследование.') end
+		imgui.ProgressBar(progress / aclock, imgui.ImVec2(227, 5))
+		imgui.CenterTextColoredRGB(string.format('%0.2f из %0.2f', progress, aclock))
+	else
+		return true
+	end
+end
+
+function renderResultStudy(information)
+	imgui.TextColoredRGB(string.format('{e6e6fa}Урожайность – %s', qualityValue[information.quality]))
+	imgui.TextColoredRGB(string.format('{e6e6fa}Кол-во дней до полива – %s', information.kd1))
+	imgui.TextColoredRGB(string.format('{e6e6fa}Кол-во дней до засухи – %s', information.kd2))
+	imgui.TextColoredRGB(string.format('{e6e6fa}Кол-во дней до созревания – %s', information.kd3))
+end
+
+function renderCheckBox(text, block, target)
+	if imgui.Checkbox(u8(text), imgui.ImBool(ini[block][target])) then
+		ini[block][target] = not ini[block][target]
+		inicfg.save(ini, 'farming.ini')
+	end
+end
+
+local w, h = getScreenResolution()
+
+function imgui.OnDrawFrame()
+	if render_draw_menu.v then
+		imgui.SetNextWindowPos(imgui.ImVec2(w / 2, h / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		imgui.SetNextWindowSize(imgui.ImVec2(750, 500))
+		imgui.Begin(u8'КФХ «Комета»', render_draw_menu, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize)
+			if imgui.Button(u8'Основная информация и настройки', imgui.ImVec2(260, 20)) then menuItemSwitch = 1 end imgui.SameLine()
+			if imgui.Button(u8'Список сотрудников', imgui.ImVec2(200, 20)) then menuItemSwitch = 2 end imgui.SameLine()
+			if imgui.Button(u8'Установка дополнительных пакетов', imgui.ImVec2(263, 20)) then menuItemSwitch = 3 end
+			
+			imgui.SetCursorPosY(48)
+			imgui.BeginChild('##block', imgui.ImVec2(738, 445), true, imgui.WindowFlags.VerticalScrollbar)
+			
+				if menuItemSwitch == 1 then
+					
+					if imgui.Button(u8'Информация о игровом помощнике', imgui.ImVec2(242, 20)) then menuItemSwitchInBlock1 = 1 end imgui.SameLine()
+					if imgui.Button(u8'Информация о командах', imgui.ImVec2(210, 20)) then menuItemSwitchInBlock1 = 2 end imgui.SameLine()
+					if imgui.Button(u8'Настройки игрового помощника', imgui.ImVec2(260, 20)) then menuItemSwitchInBlock1 = 3 end
+					
+					if menuItemSwitchInBlock1 == 2 then
+						
+						imgui.SetCursorPosY(32)
+						returnSwitchValue = renderSwitchCommandsTableInImguiBlock(informationOfCommands, returnSwitchValue)
+						
+					elseif menuItemSwitchInBlock1 == 3 then
+					
+						imgui.Text('')
+						renderCheckBox('Включить автоматическую загрузку локации (/loadfarm).', 'user', 'autoloadfarm')
+					
+					else
+						imgui.SetCursorPosY(70)
+						renderTableInImguiBlock(defaultInfoText, true)
+					end
+					
+				elseif menuItemSwitch == 2 then
+				
+					if userListNumber then
+						for index, value in ipairs(userListNumber) do
+							local playerStatus = IPC(sampGetPlayerIdByNickname(value.name)) and 'Онлайн' or 'Оффлайн'
+							imgui.Button(tostring(index), imgui.ImVec2(30, 20)) imgui.SameLine()
+							imgui.Button(value.name, imgui.ImVec2(160, 20)) imgui.SameLine()
+							imgui.Button(string.format(u8'%s уровень. %s', value.rangNumber, value.rang), imgui.ImVec2(405, 20)) imgui.SameLine()
+							imgui.Button(u8(playerStatus), imgui.ImVec2(110, 20))
+						end
+						
+						imgui.Text('')
+						imgui.SetCursorPosX(270)
+						if imgui.Button(u8'Обновить список', imgui.ImVec2(200, 20)) then
+							getUsers(true)
+						end
+					else
+						imgui.SetCursorPosY(178)
+						imgui.CenterTextColoredRGB('ERROR! Невозможно загрузить список сотрудников.')
+					end
+					
+				elseif menuItemSwitch == 3 then
+				
+					imgui.CenterTextColoredRGB('Выберите один из пунктов ниже для установки желаемого пакета.')
+					imgui.CenterTextColoredRGB('После выбора необходимого пункта и появления уведомления в чате введите код подтверждения в команду.')
+					
+					imgui.Text('')
+					
+					imgui.SetCursorPosX(270)
+					if imgui.Button(u8'Растения', imgui.ImVec2(200, 20)) then needDownload = 1 end
+					imgui.SetCursorPosX(270)
+					if imgui.Button(u8'Животные', imgui.ImVec2(200, 20)) then needDownload = 2 end
+					imgui.SetCursorPosX(270)
+					if imgui.Button(u8'Объекты', imgui.ImVec2(200, 20)) then needDownload = 3 end
+					
+					imgui.Text('')
+					
+					if needDownload then
+						imgui.SetCursorPosX(236)
+						if imgui.Button(u8'Подвердить установку пакета') then
+							local convert = {'vegetation', 'animal', 'another'}
+				
+							if convert[needDownload] then
+								--imgui.ShowCursor = false
+								addChat('Чтобы {YELLOW}убрать курсор с экрана{CLEAR} откройте основное меню (/fmenu) или любое imgui-окно.')
+								downloadFile(convert[needDownload])
+								needDownload = nil
+							else addChat('Произошла {RED}ошибка{CLEAR} при попытке идентифицировать пакет.') end
+						end imgui.SameLine()
+						
+						if imgui.Button(u8'Отменить') then
+							needDownload = nil
+						end
+					end
+				
+					--[[imgui.CenterTextColoredRGB('Код подтверждения')
+			
+					if not (progressPoint or generationCode) or os.clock() - progressPoint >= 30 then
+						progressPoint = os.clock()
+						math.randomseed(os.time())
+						generationCode = math.random(100000, 999999)
+					end
+					
+					imgui.SetCursorPosX(269)
+					imgui.ProgressBar((os.clock() - progressPoint) / 30, imgui.ImVec2(200, 5))
+					imgui.CenterTextColoredRGB(tostring(generationCode))--]]
+					
+				else
+					imgui.SetCursorPosY(178)
+					imgui.CenterTextColoredRGB('Вас приветсвует игровой помощник!')
+					imgui.CenterTextColoredRGB('Для начала работы выберите любой пункт из списка выше.')
+				end
+				
+			imgui.EndChild()
+		imgui.End()
+	end
+	
+	if render_draw_selection.v then
+		imgui.LockPlayer = true
+		
+		if selectionPoint == 2 then
+			imgui.SetNextWindowSize(imgui.ImVec2(750, 163))
+		elseif selectionPoint == 4 then
+			imgui.SetNextWindowSize(imgui.ImVec2(500, 175))
+		elseif selectionPoint == 5 then
+			imgui.SetNextWindowSize(imgui.ImVec2(700, 350))
+		elseif selectionPoint == 7 then
+			imgui.SetNextWindowSize(imgui.ImVec2(540, 350))
+		end
+		
+		imgui.SetNextWindowPos(imgui.ImVec2(w / 2, h / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
+		
+		imgui.Begin(u8'КФХ «Комета»  –  Селекция', render_draw_selection, imgui.WindowFlags.NoCollapse + imgui.WindowFlags.NoResize)
+			
+			if not stopLoadingSelection then
+	
+				if not stopLoadingSelectionTimer then stopLoadingSelectionTimer = os.clock() end
+				local w, h =  imgui.GetWindowWidth(), imgui.GetWindowHeight()
+				
+				imgui.SetCursorPos(imgui.ImVec2(w / 2 - 177.5, h / 2 - 27.5))
+				imgui.BeginChild('##blockStop', imgui.ImVec2(355, 55), true, imgui.WindowFlags.VerticalScrollbar)
+					imgui.CenterTextColoredRGB('Пожалуйста, дождитесь окончания загрузки ImGui-меню...')
+					
+					imgui.SetCursorPosX(59)
+					if renderProgressStudy(stopLoadingSelectionTimer, 2.55, true) then
+						stopLoadingSelection = true
+					end
+				imgui.EndChild()
+			
+			else
+				if stopLoadingSelectionTimer then stopLoadingSelectionTimer = nil end
+				
+				if selectionPoint == 2 then
+					
+					imgui.CenterTextColoredRGB('В шкафу с неизвестными растениями лежит несколько образцов, которые мы недавно нашли.')
+					imgui.CenterTextColoredRGB('Выберите несколько из них для исследования и отправьтесь к Анализатору, чтобы узнать о них подробнее.')
+					
+					imgui.SetCursorPosY(58)
+					
+					for index = 1, 5 do
+						if switchSelectionVegs and switchSelectionVegs == index then
+							imgui.Button(u8'Растение уже выбрано##' .. index, imgui.ImVec2(142, 100))
+							imgui.SameLine()
+						else
+							if imgui.Button(u8'Неизвестное растение##' .. index, imgui.ImVec2(142, 100)) then
+								if not switchSelectionVegs then
+									switchSelectionVegs = index
+								else
+									render_draw_selection.v = false
+									switchSelectionVegs = nil
+									selectionPoint = 3
+									addChat('Хорошо, теперь {GREEN}необходимо провести исследование{CLEAR}, это можно сделать с помощью {YELLOW}Анализатора{CLEAR}.')
+									addChat('Он находится рядом с одним из столов, Вы не пропустите.')
+								end
+							end imgui.SameLine()
+						end
+					end
+					
+				elseif selectionPoint == 4 then
+			
+					imgui.BeginChild('##block1', imgui.ImVec2(240, 125), true, imgui.WindowFlags.VerticalScrollbar)
+					
+						if not selectionPoint1 then
+							selectionPoint1 = {1, os.clock()}
+						end
+						
+						imgui.CenterTextColoredRGB('Растение №1')
+						imgui.Text('')
+						
+						if selectionPoint1[1] == 1 then
+							if renderProgressStudy(selectionPoint1[2], 45) then -- ТУТ
+								selectionPoint1 = {2, os.clock()}
+							end
+						else
+							if not selectionResult then
+								selectionResult = {
+									[1] = {
+										quality = getRandomQuality(),
+										kd1 = getRandomKd(1),
+										kd2 = getRandomKd(2),
+										kd3 = getRandomKd(3)
+									}
+								}
+							end
+							
+							if selectionResult[1] then renderResultStudy(selectionResult[1]) end
+						end
+					
+					imgui.EndChild() imgui.SameLine()
+					
+					imgui.BeginChild('##block2', imgui.ImVec2(240, 125), true, imgui.WindowFlags.VerticalScrollbar)
+					
+						imgui.CenterTextColoredRGB('Растение №2')
+						imgui.Text('')
+						
+						if selectionPoint1[1] == 1 then
+							imgui.CenterTextColoredRGB('Ожидаем начала исследования.')
+						elseif selectionPoint1[1] == 2 then
+							if renderProgressStudy(selectionPoint1[2], 45) then -- ТУТ
+								selectionPoint1 = {3, os.clock()}
+							end
+						else
+							if selectionResult[2] then renderResultStudy(selectionResult[2]) else
+								selectionResult[2] = {
+									quality = getRandomQuality(),
+									kd1 = getRandomKd(1),
+									kd2 = getRandomKd(2),
+									kd3 = getRandomKd(3)
+								}
+							end
+							if not endSelectionStudy then endSelectionStudy = true end
+						end
+						
+					imgui.EndChild()
+				
+					imgui.SetCursorPosY(152)
+					
+					if endSelectionStudy then
+						imgui.SetCursorPosX(78)
+						if imgui.Button(u8'Продолжить работу над селекцией растений') then
+							selectionPoint = 5
+							render_draw_selection.v = false
+							selectionPoint1 = nil
+							endSelectionStudy = nil
+							addChat('Теперь необходимо {GREEN}скрестить эти растения{CLEAR}. Это можно сделать в {YELLOW}рабочей зоне №1{CLEAR}.')
+							addChat('Стоит постараться, чтобы лучшие параметры растений отразились в результате.')
+						end imgui.SameLine()
+						
+						if imgui.Button(u8'Отменить') then
+							selectionPoint = 1
+							render_draw_selection.v = false
+							selectionPoint1 = nil
+							selectionResult = nil
+							endSelectionStudy = nil
+						end
+					else
+						imgui.Button(u8'Ожидайте окончания исследования...', imgui.ImVec2(486, 18))
+					end
+				elseif selectionPoint == 5 then
+					
+					if not startSelectionGame then
+						if not roundSelectionGame or roundSelectionGame < 4 then
+							imgui.CenterTextColoredRGB('Для скрещивания растений необходимо отобрать генетический материал каждого.')
+							imgui.CenterTextColoredRGB('Вы сможете это сделать вовремя нажимая на появляющиеся на экране кнопки.')
+							imgui.CenterTextColoredRGB('Кнопки находятся на экране меньше секунды, поэтому не стоит медлить, чтобы не получить штраф.')
+							imgui.CenterTextColoredRGB('Стоит также сказать о кнопках-ухудшателях, за нажатие на которые вы тоже получите штраф.')
+							
+							if not roundSelectionGame then roundSelectionGame = 1 end
+							
+							imgui.SetCursorPosX(225)
+							imgui.SetCursorPosY(184)
+							if imgui.Button(string.format(u8'Начать | Этап %s из 3', roundSelectionGame), imgui.ImVec2(250, 18)) then
+								if not resultSelectionGame then
+									local function minusIsDelta(minimal, maximum)
+										if maximum > minimal then return maximum - minimal
+										else return minimal - maximum end
+									end
+								
+									resultSelectionGame = {
+										[1] = {minusIsDelta(selectionResult[1].kd1, selectionResult[2].kd1) / 2 / 100, 1},
+										[2] = {minusIsDelta(selectionResult[1].kd2, selectionResult[2].kd2) / 2 / 100, 1},
+										[3] = {minusIsDelta(selectionResult[1].kd3, selectionResult[2].kd3) / 2 / 100, -1},
+										[4] = {
+											quality = getRandomQuality(),
+											kd1 = (selectionResult[1].kd1 + selectionResult[2].kd1) / 2,
+											kd2 = (selectionResult[1].kd2 + selectionResult[2].kd2) / 2,
+											kd3 = (selectionResult[1].kd3 + selectionResult[2].kd3) / 2
+										}
+									}
+								end
+							
+								startSelectionGame = 1
+							end
+						else
+							
+							addChat('Вы {GREEN}получили новое растение{CLEAR}. Остаётся узнать его характеристики на {YELLOW}Анализаторе{CLEAR}.')
+							selectionPoint = 6
+							render_draw_selection.v = false
+							
+						end
+					else
+						if not selectionGameButton then 
+							if not selectionGameBooster then selectionGameBooster = {0, 0, 0, 0} end
+								
+							if selectionGameBooster[3] < 15 then
+								math.randomseed(os.clock())
+								local booster = math.random(1, 2)
+								selectionGameBooster[3] = selectionGameBooster[3] + 1
+									
+								if booster == 2 and selectionGameBooster[2] < 5 then
+									selectionGameBooster[2] = selectionGameBooster[2] + 1
+									selectionGameBooster[4] = 2
+									selectionGameButton = {u8'–', os.clock(), math.random(30, 670), math.random(30, 320)}
+								end
+									
+								if not selectionGameButton then
+									selectionGameBooster[1] = selectionGameBooster[1] + 1
+									selectionGameBooster[4] = 1
+									selectionGameButton = {u8'••', os.clock(), math.random(30, 670), math.random(30, 320)}
+								end
+							else
+								roundSelectionGame = roundSelectionGame + 1
+								
+								startSelectionGame = nil
+								selectionGameButton = nil
+								selectionGameBooster = nil
+							end
+						end
+							
+						if startSelectionGame then
+							
+							if os.clock() - selectionGameButton[2] < 0.82 then -- ЖИЗНЬ КНОПОК
+									
+								imgui.SetCursorPosX(selectionGameButton[3])
+								imgui.SetCursorPosY(selectionGameButton[4])
+									
+								if imgui.Button(selectionGameButton[1], imgui.ImVec2(20, 20)) then
+									if selectionGameBooster[4] == 1 then
+										local point = string.format('kd%s', roundSelectionGame)
+										local new = resultSelectionGame[4][point] + resultSelectionGame[roundSelectionGame][2] * resultSelectionGame[roundSelectionGame][1] * 10
+										--addChat(string.format('{GREEN}+10{CLEAR} процентов. Итог по параметру %s = %s (было %s)', roundSelectionGame, new, resultSelectionGame[4][point]))
+										resultSelectionGame[4][point] = new
+									else
+										local point = string.format('kd%s', roundSelectionGame)
+										local new = resultSelectionGame[4][point] - resultSelectionGame[roundSelectionGame][2] * resultSelectionGame[roundSelectionGame][1] * 10
+										--addChat(string.format('{RED}-10{CLEAR} процентов. Итог по параметру %s = %s (было %s)', roundSelectionGame, new, resultSelectionGame[4][point]))
+										resultSelectionGame[4][point] = new
+										--addChat('{RED}-10{CLEAR} процентов.')
+									end selectionGameButton = nil
+								end
+									
+							else
+								if selectionGameBooster[4] == 1 then
+									local point = string.format('kd%s', roundSelectionGame)
+									local new = resultSelectionGame[4][point] - resultSelectionGame[roundSelectionGame][2] * resultSelectionGame[roundSelectionGame][1] * 5
+									--addChat(string.format('{RED}-5{CLEAR} процентов. Итог по параметру %s = %s (было %s)', roundSelectionGame, new, resultSelectionGame[4][point]))
+									resultSelectionGame[4][point] = new
+									--addChat('{RED}-5{CLEAR} процентов.')
+								else
+									--addChat('{YELLOW}0{CLEAR} процентов.')
+								end selectionGameButton = nil
+							end
+						end
+					end
+					
+				elseif selectionPoint == 7 then
+					
+					imgui.CenterTextColoredRGB('Результат скрещивания двух неизвестных растений.')
+					imgui.Text('')
+							
+					imgui.SetCursorPosX(10)
+					imgui.BeginChild('##block1', imgui.ImVec2(240, 125), true, imgui.WindowFlags.VerticalScrollbar)
+						imgui.CenterTextColoredRGB('Растение №1')
+						imgui.Text('')
+						renderResultStudy(selectionResult[1])
+					imgui.EndChild() imgui.SameLine() 
+							
+					--imgui.SetCursorPosX(100)
+					imgui.SetCursorPosY(100)
+							
+					imgui.Button('X', imgui.ImVec2(25, 25))
+					imgui.SameLine()
+							
+					imgui.SetCursorPosY(51)
+					imgui.BeginChild('##block2', imgui.ImVec2(240, 125), true, imgui.WindowFlags.VerticalScrollbar)
+						imgui.CenterTextColoredRGB('Растение №2')
+						imgui.Text('')
+						renderResultStudy(selectionResult[2])
+					imgui.EndChild()
+							
+					--[[imgui.SetCursorPosX(337.5)
+					imgui.Button('=', imgui.ImVec2(25, 25))--]]
+					imgui.SetCursorPosY(202)
+							
+					imgui.SetCursorPosX(10)
+					imgui.BeginChild('##block3', imgui.ImVec2(240, 125), true, imgui.WindowFlags.VerticalScrollbar)
+						imgui.CenterTextColoredRGB('Результат')
+						imgui.Text('')
+					
+						if selectionPoint1 and selectionPoint1[2] then
+							renderResultStudy(resultSelectionGame[4])
+						else
+							if not selectionPoint1 then selectionPoint1 = {os.clock(), false} end
+							if renderProgressStudy(selectionPoint1[1], 45) then -- ТУТ
+								selectionPoint1[2] = true
+							end
+						end
+					imgui.EndChild()
+					
+					if selectionPoint1 and selectionPoint1[2] then
+						
+						imgui.SetCursorPosX(290)
+						imgui.SetCursorPosY(246)
+						if imgui.Button(u8'Сохранить полученное растение', imgui.ImVec2(240, 18)) then
+							
+						end
+						
+						imgui.SetCursorPosX(355)
+						if imgui.Button(u8'Не сохранять', imgui.ImVec2(110, 18)) then
+							render_draw_selection.v = false
+							selectionPoint = 1
+							selectionPoint1 = nil
+							selectionResult = nil
+							resultSelectionGame = nil
+							
+							addChat('Вы {RED}отказались сохранять{CLEAR} полученное растение. Можете попробовать ещё раз.')
+						end
+						
+					end
+					
+				else
+					imgui.CenterTextColoredRGB('Хмммм... Как ты открыл меню?')
+				end
+			end
+			
+		imgui.End()
 	end
 end
 
@@ -426,373 +1329,8 @@ function editObject()
 end
 
 function renderText()
-	local sw, sh = getScreenResolution()
-	local w, h = 651, 400
-	local sw, sh = sw / 2 - w / 2, sh / 2 - h / 2
-	local menuElement = 1
-	
-	local function upUpdate(sx, sy)
-		local sw, sh = sw and sx or sw, sh and sy or sh
-		
-		listButton = {
-			[1] = {
-				name = 'Основная информация',
-				w = 150, h = 22,
-				position = {
-					x = sw + 8, y = sh + 8
-				},
-				tposition = {
-					x = sw + 8 + 75 - renderGetFontDrawTextLength(mfont, 'Основная информация') / 2,
-					y = sh + 15
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			},
-			[2] = {
-				name = 'Список сотрудников',
-				w = 150, h = 22,
-				position = {
-					x = sw + 170, y = sh + 8
-				},
-				tposition = {
-					x = sw + 170 + 75 - renderGetFontDrawTextLength(mfont, 'Список сотрудников') / 2,
-					y = sh + 15
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			},
-			[3] = {
-				name = 'Шаблоны растений',
-				w = 150, h = 22,
-				position = {
-					x = sw + 332, y = sh + 8
-				},
-				tposition = {
-					x = sw + 332 + 75 - renderGetFontDrawTextLength(mfont, 'Шаблоны растений') / 2,
-					y = sh + 15
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			},
-			[4] = {
-				name = 'Установка пакетов',
-				w = 150, h = 22,
-				position = {
-					x = sw + 494, y = sh + 8
-				},
-				tposition = {
-					x = sw + 493 + 75 - renderGetFontDrawTextLength(mfont, 'Установка пакетов') / 2,
-					y = sh + 15
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			}
-		}
-		
-		listButton2 = { -- 651 = 331
-			[1] = {
-				name = 'Основная информация',
-				w = 305, h = 22,
-				position = {
-					x = sw + 10.5, y = sh + 58
-				},
-				tposition = {
-					x = sw + 10.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Основная информация') / 2,
-					y = sh + 63
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			},
-			[2] = {
-				name = 'Информациях о обновлениях',
-				w = 305, h = 22,
-				position = {
-					x = sw + 335.5, y = sh + 58
-				},
-				tposition = {
-					x = sw + 335.5 + 152.5 - renderGetFontDrawTextLength(mfont, 'Информация о обновлениях') / 2,
-					y = sh + 63
-				},
-				color1 = 0xeeb22222,
-				color2 = 0xFFFFD700,
-			}
-		}
-		
-		listDownload = {
-			[1] = { -- renderLoadTextureFromFileInMemory(memory.strptr(errorImgTexture), 4096)
-				texture = doesFileExist('moonloader//farming//vegetation.png') and renderLoadTextureFromFile('moonloader//farming//vegetation.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
-				w = 283,
-				h = 80,
-				position = {
-					x = sw + 37,
-					y = sh + 68
-				},
-				iposition = {
-					x = sw + 43,
-					y = sh + 70
-				},
-				tposition = {
-					x = sw + 97,
-					y = sh + 73
-				},
-				text = '{94D99F}Растения{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских растений.'
-			},
-			[2] = {
-				texture = doesFileExist('moonloader//farming//animal.png') and renderLoadTextureFromFile('moonloader//farming//animal.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
-				w = 283,
-				h = 80,
-				position = {
-					x = sw + 337,
-					y = sh + 68
-				},
-				iposition = {
-					x = sw + 343,
-					y = sh + 70
-				},
-				tposition = {
-					x = sw + 397,
-					y = sh + 73
-				},
-				text = '{94D99F}Животные{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских животных.'
-			},
-			[3] = {
-				texture = doesFileExist('moonloader//farming//object.png') and renderLoadTextureFromFile('moonloader//farming//object.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
-				w = 283,
-				h = 80,
-				position = {
-					x = sw + 37,
-					y = sh + 168
-				},
-				iposition = {
-					x = sw + 43,
-					y = sh + 170
-				},
-				tposition = {
-					x = sw + 97,
-					y = sh + 173
-				},
-				text = '{94D99F}Объекты{ffffff}. Данный пакет содержит в себе\nнастройки для загрузки и создания\nфермерских объектов.'
-			},
-			[4] = {
-				texture = doesFileExist('moonloader//farming//icon.png') and renderLoadTextureFromFile('moonloader//farming//icon.png') or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096),
-				w = 283,
-				h = 80,
-				position = {
-					x = sw + 337,
-					y = sh + 168
-				},
-				iposition = {
-					x = sw + 343,
-					y = sh + 170
-				},
-				tposition = {
-					x = sw + 397,
-					y = sh + 173
-				},
-				text = '{94D99F}Иконки{ffffff}. Данный пакет содержит в себе\nизображения для загрузки и отображения\nиконок.'
-			},
-		}
-	end
-
-	local defaultInfoText = {
-		'Данный скрипт является дополнением для полноценной работы крестьянско-фермерского хозяйства «Комета».',
-		'Его основной задачей является дополнение игрового окружения различными объектами и интерфейсами.',
-		'',
-		'Если Вы будете использовать возможности данного скрипта в корыстных целях, то вы будете заблокированы..',
-		'.. как на сервере, администрацией, так и в самом скрипте. Обжалование подобных блокировок невозможно.',
-		'',
-		'Важно! При использовании данного скрипта вы соглашаетесь предоставлять информацию о вашем игровом нике,',
-		'ip-адрессе сервера, на которым вы авторизовались, и о серийном номере вашего логического диска (для более..',
-		'.. корректной идентификации вас как пользователя скрипта).',
-		'', 
-		'Версия скрипта ' .. thisScript().version
-	}
-	local fixH = renderGetFontDrawHeight(mfont)
-	
-	local function renderCenteredText(list, position)
-		for index, value in pairs(list) do
-			local fix = renderGetFontDrawTextLength(mfont, value) / 2
-			renderFontDrawText(mfont, value, position.x + position.w / 2 - fix, position.y + fixH * index, 0xFFFFFFFF)
-		end
-	end
-	
-	local function renderButton(list)
-		local result, mx, my = false, getCursorPos()
-		for index, value in pairs(list) do
-			if (mx > value.position.x and mx < value.position.x + value.w) and (my > value.position.y and my < value.position.y + value.h) then
-				renderDrawBox(value.position.x, value.position.y, value.w, 4, value.color1)
-				if wasKeyPressed(0x1) then result = index end
-			else
-				renderDrawBox(value.position.x, value.position.y, value.w, 4, value.color2)
-			end
-			
-			renderFontDrawText(mfont, value.name, value.tposition.x, value.tposition.y, 0xffFFFFFF)
-		end return result
-	end
-	
-	local function renderDownload(list)
-		local result, mx, my = false, getCursorPos()
-		for index, value in pairs(list) do
-			if (mx > value.position.x and mx < value.position.x + value.w) and (my > value.position.y and my < value.position.y + value.h) then
-				renderDrawBox(value.position.x, value.position.y, value.w, value.h, 0x11FFFFFF)
-				if wasKeyPressed(0x1) then result = index end
-			end
-			
-			renderDrawTexture(value.texture, value.iposition.x, value.iposition.y, 48, 48, 0, 0xFFFFFFFF)
-			renderFontDrawText(mfont, value.text, value.tposition.x, value.tposition.y, 0xFFFFFFFF)
-		end return result
-	end
-	
-	local function renderEditor()
-		if not editorTexture then
-			local pathl = {'close', 'move', 'reload'}
-			editorTexture = {}
-			for index, value in pairs(pathl) do
-				local path = string.format('moonloader//farming//%s.png', value)
-				editorTexture[index] = doesFileExist(path) and renderLoadTextureFromFile(path) or renderLoadTextureFromFileInMemory(memory.strptr("x255"), 4096)
-			end
-		end
-		
-		renderDrawTexture(editorTexture[1], sw + 635, sh + 373, 16, 16, 0, 0xffffffff)
-		renderDrawTexture(editorTexture[2], sw + 610, sh + 373, 16, 16, 0, 0xffffffff)
-		if menuElement == 2 then
-			renderDrawTexture(editorTexture[3], sw + 585, sh + 373, 16, 16, 0, 0xffffffff)
-		end
-	
-		if isKeyDown(0x1) then
-			local mx, my = getCursorPos()
-			if (mx > sw + 610 and mx < sw + 630) and (my > sh + 373 and my < sh + 393) then
-				sw, sh = mx - 620, my - 383
-				boolConvertUserTable = false
-				upUpdate(sw, sh)
-			elseif (mx > sw + 635 and mx < sw + 651) and (my > sh + 373 and my < sh + 389) then
-				render_menu = not render_menu
-			elseif menuElement == 2 then
-				if (mx > sw + 585 and mx < sw + 601) and (my > sh + 373 and my < sh + 389) then
-					getUsers(true)
-					boolConvertUserTable = false
-				end
-			end
-		end
-	end
-	
-	local function renderUserList(list)
-		local result, mx, my = false, getCursorPos()
-		local bx, by = sw + 30, sh + 68
-		
-		local function convertUserTable(listUser)
-			local result = {}
-			for index, value in pairs(listUser) do
-				local playerStatus = IPC(sampGetPlayerIdByNickname(value.name)) and 'Онлайн' or 'Оффлайн'
-				
-				result[index] = {
-					name = {
-						v = value.name,
-						color = value.color,
-						w = 160, h = 25,
-						x = bx, 
-						y = by + 30 * index - 30,
-						tx = bx + 80 - renderGetFontDrawTextLength(mfont, value.name) / 2,
-						ty = by + 30 * index - 25.3
-					},
-					rang = {
-						v = value.rang,
-						color = value.color,
-						w = 235, h = 25,
-						x = bx + 205, 
-						y = by + 30 * index - 30,
-						tx = bx + 322.5 - renderGetFontDrawTextLength(mfont, value.rang) / 2,
-						ty = by + 30 * index - 25.3
-					},
-					rangNumber = {
-						v = value.rangNumber,
-						color = value.color,
-						w = 35, h = 25,
-						x = bx + 165, 
-						y = by + 30 * index - 30,
-						tx = bx + 182.5 - renderGetFontDrawTextLength(mfont, value.rangNumber) / 2,
-						ty = by + 30 * index - 25.3
-					},
-					serialNumber = {
-						v = playerStatus,
-						color = value.color,
-						w = 150, h = 25,
-						x = bx + 445, 
-						y = by + 30 * index - 30,
-						tx = bx + 520 - renderGetFontDrawTextLength(mfont, playerStatus) / 2,
-						ty = by + 30 * index - 25.3
-					},
-				}
-			end return result
-		end
-		
-		if not boolConvertUserTable then
-			boolConvertUserTable = true
-			listRenderUser = convertUserTable(list)
-		end
-		
-		for index, _value in pairs(listRenderUser) do
-			for index, value in pairs(_value) do
-				renderDrawBox(value.x, value.y, value.w, value.h, value.color)
-				renderFontDrawText(mfont, value.v, value.tx, value.ty, 0xFFFFFFFF)
-			end
-		end
-	end
-
-	upUpdate()
-	
 	while true do wait(0)
-		if not isCharDead(playerPed) then
-			if render_menu then
-				if not (sampIsCursorActive() and activeCursor) then
-					activeCursor = true
-					sampSetCursorMode(3)
-				end
-				
-				renderBoxRounded(sw, sh, w, h, 5, 0xee333333)
-				local result = renderButton(listButton)
-				if result then menuElement = result end
-				
-				renderBoxRounded(sw, sh + 40, w, h - 40, 5, 0xee18171c)
-				--renderDrawBox(sw + 10, sh + 45, w - 20, 1.8, 0x66ffffff)
-				renderEditor()
-				
-				if menuElement == 1 then
-					local result = renderButton(listButton2)
-					if result then menuOneElement = result end
-					
-					if menuOneElement == 2 then
-					else
-						renderCenteredText(defaultInfoText, {x = sw + 10, y = sh + 90, w = 629})
-					end
-				end
-				
-				if menuElement == 2 then
-					renderUserList(userListNumber)
-				end
-				
-				if menuElement == 4 then
-					local result = renderDownload(listDownload)
-					local text = {
-						'При выборе любого из пунктов Вам будет предложено ввести код подтверждения, после чего будет установлены..',
-						'.. все необходимые настройки и (или) файлы.'
-					}
-					renderCenteredText(text, {x = sw + 10, y = sh + 255, w = 629})
-					
-					if result then
-						local acceptNumber = math.random(1000, 9999)
-						addChat(string.format('Для дальнейшей установки введите команду с кодом {94D99F}/daccept {b22222}%d{e6e6fa}.', acceptNumber))
-						acceptDownload = {result, acceptNumber}
-						render_menu = false
-					end
-				end
-			else
-				if sampIsCursorActive() and activeCursor then
-					activeCursor = false
-					sampSetCursorMode(0)
-				end
-			end
-		
+		if not isCharDead(playerPed) and loadfarm then
 			local px, py, pz = getCoordinates()
 			
 			for index, value in pairs(global.vegetation) do
@@ -814,7 +1352,7 @@ function renderText()
 								local status, quest = nil, ''
 								
 								local name = string.format('Название – {B3EE3A}%s{e6e6fa} [%d]', value.name, index)
-								local quality = string.format('Качество – {B3EE3A}%s{e6e6fa}', qualityValue[value.quality])
+								local quality = string.format('Урожайность – {B3EE3A}%s{e6e6fa}', qualityValue[value.quality])
 								local date = string.format('Дата посадки – {FFCD00}%s.%s.%s{e6e6fa}', value.date.d, value.date.m, value.date.y)
 								local water = string.format('Последний полив был {FFCD00}%s{e6e6fa} дней назад', result)
 								
@@ -895,12 +1433,12 @@ function renderText()
 			
 			local wsx, wsy, wsz = 1032.4544677734, -289.4255065918, 73.9921875
 			local distance = getDistanceBetweenCoords3d(px, py, pz, wsx, wsy, wsz)
-			if distance < 20 then
+			if distance < 10 then
 				if isPointOnScreen(wsx, wsy, wsz) then
 					local sx, sy = convert3DCoordsToScreen(wsx, wsy, wsz)
 					
 					local text = string.format('Объём воды – {6495ED}%0.2f{e6e6fa} л', ini.store.water)
-					renderFontDrawText(font, text, sx, sy, 0xFFe6e6fa)
+					renderFontDrawTextCentered(font, text, sx, sy, 0xFFe6e6fa)
 				end
 			end
 			
@@ -930,6 +1468,26 @@ function renderText()
 					end
 				end
 			end
+			
+			if selectionPoint then
+				for index, value in pairs(selectionEvent) do
+					local coords = value.position
+					local distance = getDistanceBetweenCoords3d(px, py, pz, coords.x, coords.y, coords.z)
+					if distance < 1.75 then
+						local sx, sy = convert3DCoordsToScreen(coords.x, coords.y, coords.z)
+						local text = value.text[selectionPoint]
+						renderFontDrawTextCentered(font, text and text or value.text.ELSE, sx, sy, 0xFFFFFFFF)
+						
+						if value.callback[selectionPoint] then
+							if wasKeyPressed(vkeys.VK_MENU) and isKeyDown(VK_RBUTTON) then
+								if isKeyCheckAvailable() then
+									value.callback[selectionPoint]()
+								end
+							end
+						end
+					end
+				end
+			end
 		end
 	end
 end
@@ -939,15 +1497,14 @@ function createVegs(parametrs)
 		local x, y, z = getCharCoordinates(playerPed)
 				
 		if not clearRadius(x, y, z) then
-			local name, model, fix, kd1, kd2, kd3, day, day1 = string.match(parametrs, '(%S+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)')
-			local quality = math.random(1, 99)
-			if quality > 40 and quality < 50 then
-				quality = 3
-			elseif quality > 0 and quality <= 40 then
-				quality = 2
-			else
-				quality = 1
+			local name, model, fix, kd1, kd2, kd3, day, day1 = string.match(parametrs, '(%S+) (%d+) (%S+) (%d+) (%d+) (%d+) (%d+) (%d+)')
+			
+			if not tonumber(fix) then
+				addChat('Произошла {RED}ошибка{CLEAR} в параметре [FIX], попробуйте {YELLOW}использовать иной вариант{CLEAR}.')
+				return false
 			end
+			
+			local quality = getRandomQuality()
 			
 			table.insert(global.vegetation, #ini.vegetation + 1, {
 				name = name,
@@ -977,46 +1534,68 @@ function createVegs(parametrs)
 					
 			saveVegetation(#global.vegetation)
 		else
-			addChat('Неподалеку уже находится растение, найдите другое место.')
+			addChat('Неподалеку {YELLOW}уже находится растение{CLEAR}, найдите другое место.')
 		end
 	else
-		addChat('Вы не должны находится в транспорте.')
+		addChat('Для создания растения Вы {YELLOW}не должны находится в транспорте{CLEAR}.')
 	end
 end
 
-function playAnim(id)
-	if tonumber(id) then
-		local list = {
-			[1] = function() -- СБОР РАСТЕНИЙ
-				local result, id = sampGetPlayerIdByCharHandle(playerPed)
-				if result then
-					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'BOMBER', 'BOM_Plant', false, false, false, false, 264192})
-				end
-			end,
-			[2] = function() -- ПОЛИВ
-				local result, id = sampGetPlayerIdByCharHandle(playerPed)
-				if result then
-					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'BAR', 'Barserve_bottle', false, false, false, false, 134481920})
-				end
-			end,
-			[3] = function() -- СКЛАДИРОВАНИЕ
-				local result, id = sampGetPlayerIdByCharHandle(playerPed)
-				if result then
-					emul_rpc('onApplyPlayerAnimation', {tonumber(id), 'CARRY', 'putdwn105', false, false, false, false, 264192})
-				end
-			end,
-			[4] = function() -- CБИВ
-				local result, id = sampGetPlayerIdByCharHandle(playerPed)
-				if result then
-					emul_rpc('onClearPlayerAnimation', {tonumber(id)})
-				end
-			end
+function loading_farm(bool)
+	if not loadfarm then
+		for index, value in pairs(ini.vegetation) do
+			local result = convertStringToTable(value)
+			if result then global.vegetation[index] = result
+			else addChat('Произошла {RED}ошибка{CLEAR} при попытке подгрузить растение {YELLOW}' .. index .. '{e6e6fa}.') end
+		end
 			
+		for index, value in pairs(ini.another) do
+			local result = convertStringToTable(value)
+			if result then 
+				global.another[index] = result
+				local b = global.another[index]
+				global.another[index].handle = createObject(b.model, b.position.x, b.position.y, b.position.z)
+				setObjectCoordinates(b.handle, b.position.x, b.position.y, b.position.z)
+				setObjectRotation(b.handle, b.rotation.x, b.rotation.y, b.rotation.z)
+				setObjectCollision(b.handle, false)
+			else addChat('Произошла {RED}ошибка{CLEAR} при попытке подгрузить объект {YELLOW' .. index .. '{e6e6fa}.') end
+		end
+			
+		loadfarm = true
+		if not bool then
+			addChat('Локация и всё необходимое для неё было {GREEN}успешно загружено{CLEAR}.')
+		else
+			addChat('Локация и всё необходимое для неё было {YELLOW}автоматически загружено{CLEAR}.')
+		end
+	else 
+		addChat('Вы {YELLOW}не можете загрузить{CLEAR} локацию повторно.') 
+	end
+end
+
+function playAnim(parametrs)
+	if tonumber(parametrs) then
+		local list = {
+			[0] = function() -- CБИВ
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then emul_rpc('onClearPlayerAnimation', {tonumber(id)}) end
+			end,
+			[1] = {'BOMBER', 'BOM_Plant', 264192},
+			[2] = {'BAR', 'Barserve_bottle', 134481920},
+			[3] = {'CARRY', 'putdwn105', false, false, false, false, 264192}
 		}
 		
-		if list[tonumber(id)] then
-			list[tonumber(id)]()
+		local value = list[tonumber(parametrs)]
+		if value then
+			if type(value) == 'function' then value() 
+			else 
+				local result, id = sampGetPlayerIdByCharHandle(playerPed)
+				if result then emul_rpc('onApplyPlayerAnimation', {tonumber(id), value[1], value[2], false, false, false, false, value[3]}) end
+			end
 		end
+	elseif string.match(parametrs, '(%S+) (%S+)') then
+		local library, name = string.match(parametrs, '(%S+) (%S+)')
+		local result, id = sampGetPlayerIdByCharHandle(playerPed)
+		if result then emul_rpc('onApplyPlayerAnimation', {tonumber(id), library, name, false, false, false, false, 264192}) end
 	end
 end
 
@@ -1039,7 +1618,7 @@ function putVegetation(index, value)
 				global.store.all = 0
 				inicfg.save(ini, 'farming.ini')
 			else
-				addChat('У вас ничего нет.')
+				addChat('Для того, чтобы что-то загрузить на склад, это что-то нужно для начала где-то взять.')
 			end global.store.work = nil
 		end
 	end)
@@ -1056,7 +1635,7 @@ function destroyVegetation(index, value)
 				playAnim(1) wait(2700) playAnim(1) wait(2700) playAnim(3) wait(300) playAnim(4)
 				lockPlayerControl(false)
 				
-				addChat('Вы убрали это растение.')
+				addChat('Вы {GREEN}успешно убрали{CLEAR} засохшее растение, информация о нём была удалена.')
 				if value.handle then
 					if doesObjectExist(value.handle) then
 						deleteObject(value.handle)
@@ -1088,7 +1667,7 @@ function wateredVegetation(index, value, result)
 					wait(300) playAnim(4)
 					lockPlayerControl(false)
 				
-					addChat('Растение было полито.')
+					addChat('Вы {GREEN}успешно полили{CLEAR}засыхающие растение.')
 					global.vegetation[index].water = {
 						d = os.date('%d'), m = os.date('%m'), y = os.date('%Y'),
 						kd1 = value.water.kd1, kd2 = value.water.kd2, kd3 = value.water.kd3
@@ -1096,10 +1675,10 @@ function wateredVegetation(index, value, result)
 					global.vegetation[index].work = nil
 					saveVegetation(index)
 				else
-					addChat(string.format('Недостаточный объём воды в водонапорной башне, для полива требуется {6495ED}%d{e6e6fa} л.', mass))
+					addChat(string.format('{RED}Недостаточный объём воды{CLEAR} в водонапорной башне, для полива требуется {RED}%d{CLEAR} л.', mass))
 				end
 			else
-				addChat('Вы не должны находится в транспорте.')
+				addChat('Для полива растения Вы {YELLOW}не должны находится в транспорте{CLEAR}.')
 			end
 		end
 	end)
@@ -1131,7 +1710,7 @@ function takeVegetation(index, value)
 					else wait(5700) end lockPlayerControl(false)
 					
 					addChat(string.format(
-					'Вы собрали {00CC66}%0.2f{e6e6fa} кг растения {9370DB}%s{e6e6fa}. Всего вы собрали {00CC66}%0.2f{e6e6fa} кг.', 
+					'Вы собрали {YELLOW}%0.2f{CLEAR} кг растения {GREEN}%s{CLEAR}. Всего вы собрали {YELLOW}%0.2f{CLEAR} кг.', 
 					mass, value.name, global.store.all))
 					
 					if value.handle then
@@ -1144,11 +1723,11 @@ function takeVegetation(index, value)
 					ini.vegetation[index] = nil
 					inicfg.save(ini, 'farming.ini')
 				else
-					addChat(string.format('Вы не можете унести более {00CC66}%0.2f{e6e6fa} кг.', limit))
+					addChat(string.format('Вы {RED}не можете унести{CLEAR} более {YELLOW}%0.2f{CLEAR} кг.', limit))
 				end
 			end
 		else
-			addChat('Нельзя собрать неизвестное растение.')
+			addChat('Вы {RED}не можете собрать{CLEAR} неизвестное растение, оно может быть опасно.')
 		end
 	end)
 end
@@ -1196,7 +1775,10 @@ function onScriptTerminate(script, bool)
 end
 
 function addChat(text)
-	sampAddChatMessage(string.format('farm of anarchy{e6e6fa} – %s', tostring(text)), 0xFFADEF23)
+	for index, value in pairs(scriptColor) do
+		if string.match(text, index) then text = text:gsub(index, value[1]) end
+	end
+	sampAddChatMessage(string.format('КФХ «Комета»{e6e6fa} – %s', tostring(text)), 0xFF536ADF)
 end
 
 function clearRadius(x, y, z)
@@ -1289,14 +1871,14 @@ function saveVegetation(index, bool)
 		if result then
 			ini.vegetation[index] = result
 			if not bool then
-				addChat('Информация о растении была обновлена.')
+				addChat('Информация о этом растении была {GREEN}обновлена и автоматически сохранена{CLEAR} в файле конфигурации.')
 				inicfg.save(ini, 'farming.ini')
 			end
 		else
-			addChat('Произошла ошибка при попытке сохранить растение.')
+			addChat('Произошла {RED}ошибка{CLEAR} при попытке сохранить растение, попробуйте снова.')
 		end
 	else
-		addChat('Данного растения не существует, проверьте правильность ID.')
+		addChat('Растение с таким ID {RED}не было найдено{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 	end
 end
 
@@ -1309,14 +1891,35 @@ function saveObject(index, bool)
 			inicfg.save(ini, 'farming.ini')
 			
 			if not bool then
-				addChat('Информация о объекте была обновлена.')
+				addChat('Информация о этом объекте была {GREEN}обновлена и автоматически сохранена{CLEAR} в файле конфигурации.')
 			end
 		else
-			addChat('Произошла ошибка при попытке сохранить объект.')
+			addChat('Произошла {RED}ошибка{CLEAR} при попытке сохранить объект, попробуйте снова.')
 		end
 	else
-		addChat('Данный объект не существует, проверьте правильность ID.')
+		addChat('Растение с таким ID {RED}не было найдено{CLEAR} в файле конфигурации, проверьте правильность введённого ID.')
 	end
+end
+
+function getRandomQuality()
+	math.randomseed(os.clock())
+	local quality = math.random(1, 99)
+	if quality > 40 and quality < 50 then return 3
+	elseif quality > 0 and quality <= 40 then return 2
+	else return 1 end
+end
+
+function getRandomKd(index)
+	local balance = {
+		[1] = {1, 4},
+		[2] = {5, 12},
+		[3] = {13, 30}
+	}
+	
+	math.randomseed(os.clock())
+	local quality = math.random(1, 100)
+	
+	return balance[index][1] + (balance[index][2] - balance[index][1]) * (quality / 100)
 end
 
 function getCoordinates()
@@ -1337,6 +1940,17 @@ function checkValidityDate(date)
 
 		return math.floor(all2 - all1)
 	end
+end
+
+function math.rounding(number)
+	if type(number) == 'number' then
+		if string.match(tostring(number), '(%S+)%.(%S+)') then
+			local integer, fractional = string.match(tostring(number), '(%S+)%.(%S+)')
+			local fractional = string.format('0.%s', fractional)
+			if tonumber(fractional) > 0.5 then return tonumber(integer) + 1 
+			else return tonumber(integer) end
+		else return number end
+	end return -1
 end
 
 function emul_rpc(hook, parameters)
@@ -1587,10 +2201,14 @@ end
 
 function onWindowMessage(msg, wparam, lparam)
 	if msg == 0x100 or msg == 0x101 then
-		if wparam == vkeys.VK_ESCAPE and render_menu and isKeyCheckAvailable() then
+		if wparam == vkeys.VK_ESCAPE and (render_menu or imgui.Process) and isKeyCheckAvailable() then
 			consumeWindowMessage(true, false)
 			if msg == 0x101 then
-				render_menu = false
+				if imgui.Process then
+					render_draw_menu.v, render_draw_selection.v = false, false
+				else
+					render_menu = false
+				end
 			end
 		end
 	end
@@ -1620,7 +2238,7 @@ function autoUpdate(versionUrl, updateUrl)
 					versionFile:close() os.remove(versionPath)
 
 					if versionInfo.latest == thisScript().version then
-						addChat('Вы используете актуальную версию скрипта.')
+						addChat('Игровой помощник был успешно загружен. Вы используете актуальную версию.')
 					else
 						lua_thread.create(function()
 							wait(200)
@@ -1636,7 +2254,7 @@ function autoUpdate(versionUrl, updateUrl)
 					end
 				end
 			else
-				addChat('Произошла ошибка при попытке установить обновление.')
+				addChat('Произошла {RED}ошибка{CLEAR} при попытке установить обновление.')
 			end
 		end
 	end)
@@ -1655,11 +2273,14 @@ function getUsers(bool)
 			userList[value.name] = {rang = value.rang, rangNumber = value.rangNumber, serialNumber = value.serialNumber, color = value.color}
 			userListNumber[tonumber(index)] = value
 			for userSerial in string.gmatch(value.serialNumber, '[^,%s]+') do
-				if userSerial == playerSerial then normalSerial = not bool end
+				if userSerial == playerSerial then
+					globalPlayerRang = value.rangNumber
+					normalSerial = not bool 
+				end
 			end
 		end
 		foundPlayerInList = not bool
-	else addChat('Произошла ошибка при попытке подгрузить список пользователей.') end
+	else addChat('Произошла {RED}ошибка{CLEAR} при попытке подгрузить список пользователей.') end
 end
 
 function downloadFile(index)
@@ -1672,18 +2293,18 @@ function downloadFile(index)
 		end
 		addChat('Найден и установлен пакет иконок.')
 		thisScript():reload()--]]
-		addChat('Произошла ошибка при попытке установить пакет.')
+		addChat('Произошла {RED}ошибка{CLEAR} при попытке установить пакет.')
 	else
 		local config = https.request('https://raw.githubusercontent.com/skezz-perry/farm/master/config')
 		local config = decodeJson(config)
 		if config and type(config) == 'table' then 
 			ini[index] = config[index]
-			for index, value in pairs(ini.vegetation) do ini.vegetation[index] = u8:decode(value) end
-			for index, value in pairs(ini.animal) do ini.animal[index] = u8:decode(value) end
+			for index, value in pairs(ini.vegetation) do ini.vegetation[index] = value end
+			for index, value in pairs(ini.animal) do ini.animal[index] = value end
 			inicfg.save(ini, 'farming.ini')
-			addChat('Найден и установлен пакет настроек, для загрузки локации введите /fload.')
+			addChat('{GREEN}Найден и установлен{CLEAR} пакет настроек, для загрузки локации введите /fload.')
 			thisScript():reload()
-		else addChat('Произошла ошибка при попытке установить пакет.') end
+		else addChat('Произошла {RED}ошибка{CLEAR} при попытке установить пакет.') end
 	end
 end
 
@@ -1729,4 +2350,230 @@ function urlencode(str)
       str = string.gsub (str, " ", "+")
    end
    return str
+end
+
+function renderFontDrawTextCentered(font, text, x, y, color)
+	local fix = renderGetFontDrawTextLength(font, text)
+	renderFontDrawText(font, text, x - fix / 2, y, color)
+end
+
+--[[function apply_custom_style()
+  imgui.SwitchContext()
+  local style = imgui.GetStyle()
+  local colors = style.Colors
+  local clr = imgui.Col
+  local ImVec4 = imgui.ImVec4
+  local ImVec2 = imgui.ImVec2
+  
+  style.WindowPadding = ImVec2(6, 4)
+  style.WindowRounding = 5.0
+  style.FramePadding = ImVec2(5, 2)
+  style.FrameRounding = 5.0
+  style.ItemSpacing = ImVec2(7, 1)
+  style.ItemInnerSpacing = ImVec2(1, 1)
+  style.TouchExtraPadding = ImVec2(0, 0)
+  style.IndentSpacing = 6.0
+  style.ScrollbarSize = 12.0
+  style.ScrollbarRounding = 16.0
+  style.GrabMinSize = 20.0
+  style.GrabRounding = 2.0
+
+  style.WindowTitleAlign = ImVec2(0.5, 0.5)
+
+  colors[clr.Text] = ImVec4(0.860, 0.930, 0.890, 0.78)
+  colors[clr.TextDisabled] = ImVec4(0.860, 0.930, 0.890, 0.28)
+  colors[clr.WindowBg] = ImVec4(0.13, 0.14, 0.17, 1.00)
+  colors[clr.ChildWindowBg] = ImVec4(0.200, 0.220, 0.270, 0.58)
+  colors[clr.PopupBg] = ImVec4(0.200, 0.220, 0.270, 0.9)
+  colors[clr.Border] = ImVec4(0.31, 0.31, 1.00, 0.00)
+  colors[clr.BorderShadow] = ImVec4(0.00, 0.00, 0.00, 0.00)
+  colors[clr.FrameBg] = ImVec4(0.200, 0.220, 0.270, 1.00)
+  colors[clr.FrameBgHovered] = ImVec4(0.455, 0.198, 0.301, 0.78)
+  colors[clr.FrameBgActive] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.TitleBg] = ImVec4(0.232, 0.201, 0.271, 1.00)
+  colors[clr.TitleBgActive] = ImVec4(0.502, 0.075, 0.256, 1.00)
+  colors[clr.TitleBgCollapsed] = ImVec4(0.200, 0.220, 0.270, 0.75)
+  colors[clr.MenuBarBg] = ImVec4(0.200, 0.220, 0.270, 0.47)
+  colors[clr.ScrollbarBg] = ImVec4(0.200, 0.220, 0.270, 1.00)
+  colors[clr.ScrollbarGrab] = ImVec4(0.09, 0.15, 0.1, 1.00)
+  colors[clr.ScrollbarGrabHovered] = ImVec4(0.455, 0.198, 0.301, 0.78)
+  colors[clr.ScrollbarGrabActive] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.CheckMark] = ImVec4(0.71, 0.22, 0.27, 1.00)
+  colors[clr.SliderGrab] = ImVec4(0.47, 0.77, 0.83, 0.14)
+  colors[clr.SliderGrabActive] = ImVec4(0.71, 0.22, 0.27, 1.00)
+  colors[clr.Button] = ImVec4(0.47, 0.77, 0.83, 0.14)
+  colors[clr.ButtonHovered] = ImVec4(0.455, 0.198, 0.301, 0.86)
+  colors[clr.ButtonActive] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.Header] = ImVec4(0.455, 0.198, 0.301, 0.76)
+  colors[clr.HeaderHovered] = ImVec4(0.455, 0.198, 0.301, 0.86)
+  colors[clr.HeaderActive] = ImVec4(0.502, 0.075, 0.256, 1.00)
+  colors[clr.ResizeGrip] = ImVec4(0.47, 0.77, 0.83, 0.04)
+  colors[clr.ResizeGripHovered] = ImVec4(0.455, 0.198, 0.301, 0.78)
+  colors[clr.ResizeGripActive] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.PlotLines] = ImVec4(0.860, 0.930, 0.890, 0.63)
+  colors[clr.PlotLinesHovered] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.PlotHistogram] = ImVec4(0.860, 0.930, 0.890, 0.63)
+  colors[clr.PlotHistogramHovered] = ImVec4(0.455, 0.198, 0.301, 1.00)
+  colors[clr.TextSelectedBg] = ImVec4(0.455, 0.198, 0.301, 0.43)
+  colors[clr.ModalWindowDarkening] = ImVec4(0.200, 0.220, 0.270, 0.73)
+end--]]
+
+function apply_custom_style()
+	imgui.SwitchContext()
+	local style = imgui.GetStyle()
+	local colors = style.Colors
+	local clr = imgui.Col
+	local ImVec4 = imgui.ImVec4
+	local ImVec2 = imgui.ImVec2
+	  
+	style.WindowPadding = ImVec2(6, 4)
+	style.WindowRounding = 5.0
+	style.ChildWindowRounding = 5.0
+	style.FramePadding = ImVec2(5, 2)
+	style.FrameRounding = 5.0
+	style.ItemSpacing = ImVec2(7, 1)
+	style.ItemInnerSpacing = ImVec2(1, 1)
+	style.TouchExtraPadding = ImVec2(0, 0)
+	style.IndentSpacing = 6.0
+	style.ScrollbarSize = 12.0
+	style.ScrollbarRounding = 16.0
+	style.GrabMinSize = 20.0
+	style.GrabRounding = 2.0
+
+	style.WindowTitleAlign = ImVec2(0.5, 0.5)
+  
+
+	colors[clr.Text] = ImVec4(0.95, 0.96, 0.98, 1.00)
+      colors[clr.TextDisabled] = ImVec4(0.36, 0.42, 0.47, 1.00)
+      colors[clr.WindowBg] = ImVec4(0.13, 0.14, 0.17, 1.00)
+      colors[clr.ChildWindowBg] = ImVec4(0.15, 0.18, 0.22, 1.00)
+      colors[clr.PopupBg] = ImVec4(0.08, 0.08, 0.08, 0.94)
+      colors[clr.Border] = ImVec4(0.43, 0.43, 0.50, 0.00)
+      colors[clr.BorderShadow] = ImVec4(0.00, 0.00, 0.00, 0.00)
+      colors[clr.FrameBg] = ImVec4(0.20, 0.25, 0.29, 1.00)
+      colors[clr.FrameBgHovered] = ImVec4(0.12, 0.20, 0.28, 1.00)
+      colors[clr.FrameBgActive] = ImVec4(0.09, 0.12, 0.14, 1.00)
+      colors[clr.TitleBg] = ImVec4(0.09, 0.12, 0.14, 0.65)
+      colors[clr.TitleBgCollapsed] = ImVec4(0.00, 0.00, 0.00, 0.51)
+      colors[clr.TitleBgActive] = ImVec4(0.08, 0.10, 0.12, 1.00)
+      colors[clr.MenuBarBg] = ImVec4(0.15, 0.18, 0.22, 1.00)
+      colors[clr.ScrollbarBg] = ImVec4(0.02, 0.02, 0.02, 0.39)
+      colors[clr.ScrollbarGrab] = ImVec4(0.20, 0.25, 0.29, 1.00)
+      colors[clr.ScrollbarGrabHovered] = ImVec4(0.18, 0.22, 0.25, 1.00)
+      colors[clr.ScrollbarGrabActive] = ImVec4(0.09, 0.21, 0.31, 1.00)
+      colors[clr.ComboBg] = ImVec4(0.20, 0.25, 0.29, 1.00)
+      colors[clr.CheckMark] = ImVec4(0.28, 0.56, 1.00, 1.00)
+      colors[clr.SliderGrab] = ImVec4(0.28, 0.56, 1.00, 1.00)
+      colors[clr.SliderGrabActive] = ImVec4(0.37, 0.61, 1.00, 1.00)
+      colors[clr.Button] = ImVec4(0.20, 0.25, 0.29, 1.00)
+      colors[clr.ButtonHovered] = ImVec4(0.28, 0.56, 1.00, 1.00)
+      colors[clr.ButtonActive] = ImVec4(0.06, 0.53, 0.98, 1.00)
+      colors[clr.Header] = ImVec4(0.20, 0.25, 0.29, 0.55)
+      colors[clr.HeaderHovered] = ImVec4(0.26, 0.59, 0.98, 0.80)
+      colors[clr.HeaderActive] = ImVec4(0.26, 0.59, 0.98, 1.00)
+      colors[clr.ResizeGrip] = ImVec4(0.26, 0.59, 0.98, 0.25)
+      colors[clr.ResizeGripHovered] = ImVec4(0.26, 0.59, 0.98, 0.67)
+      colors[clr.ResizeGripActive] = ImVec4(0.06, 0.05, 0.07, 1.00)
+      colors[clr.CloseButton] = ImVec4(0.40, 0.39, 0.38, 0.16)
+      colors[clr.CloseButtonHovered] = ImVec4(0.40, 0.39, 0.38, 0.39)
+      colors[clr.CloseButtonActive] = ImVec4(0.40, 0.39, 0.38, 1.00)
+	colors[clr.PlotLines] = ImVec4(0.61, 0.61, 0.61, 1.00)
+      colors[clr.PlotLinesHovered] = ImVec4(1.00, 0.43, 0.35, 1.00)
+	colors[clr.PlotHistogram] = ImVec4(0.90, 0.70, 0.00, 1.00)
+	colors[clr.PlotHistogramHovered] = ImVec4(1.00, 0.60, 0.00, 1.00)
+	colors[clr.TextSelectedBg] = ImVec4(0.25, 1.00, 0.00, 0.43)
+	colors[clr.ModalWindowDarkening] = ImVec4(1.00, 0.98, 0.95, 0.73)
+end
+
+function imgui.TextColoredRGB(string)
+    local style = imgui.GetStyle()
+    local colors = style.Colors
+    local clr = imgui.Col
+
+    local function color_imvec4(color)
+        if color:upper() == 'SSSSSS' then return colors[clr.Text] end
+        local color = type(color) == 'number' and ('%X'):format(color):upper() or color:upper()
+        local rgb = {}
+        for i = 1, #color/2 do rgb[#rgb+1] = tonumber(color:sub(2*i-1, 2*i), 16) end
+        return imgui.ImVec4(rgb[1]/255, rgb[2]/255, rgb[3]/255, rgb[4] and rgb[4]/255 or colors[clr.Text].w)
+    end
+
+    local function render_text(string)
+        local text, color = {}, {}
+        local m = 1
+        while string:find('{......}') do
+            local n, k = string:find('{......}')
+            text[#text], text[#text+1] = string:sub(m, n-1), string:sub(k+1, #string)
+            color[#color+1] = color_imvec4(string:sub(n+1, k-1))
+            local t1, t2 = string:sub(1, n-1), string:sub(k+1, #string)
+            string = t1..t2
+            m = k-7
+        end
+        if text[0] then
+            for i, _ in ipairs(text) do
+                imgui.TextColored(color[i] or colors[clr.Text], u8(text[i]))
+                imgui.SameLine(nil, 0)
+            end
+            imgui.NewLine()
+        else imgui.Text(u8(string)) end
+    end
+
+    render_text(string)
+end
+
+function imgui.CenterTextColoredRGB(text)
+    local width = imgui.GetWindowWidth()
+    local style = imgui.GetStyle()
+    local colors = style.Colors
+    local ImVec4 = imgui.ImVec4
+
+    local explode_argb = function(argb)
+        local a = bit.band(bit.rshift(argb, 24), 0xFF)
+        local r = bit.band(bit.rshift(argb, 16), 0xFF)
+        local g = bit.band(bit.rshift(argb, 8), 0xFF)
+        local b = bit.band(argb, 0xFF)
+        return a, r, g, b
+    end
+
+    local getcolor = function(color)
+        if color:sub(1, 6):upper() == 'SSSSSS' then
+            local r, g, b = colors[1].x, colors[1].y, colors[1].z
+            local a = tonumber(color:sub(7, 8), 16) or colors[1].w * 255
+            return ImVec4(r, g, b, a / 255)
+        end
+        local color = type(color) == 'string' and tonumber(color, 16) or color
+        if type(color) ~= 'number' then return end
+        local r, g, b, a = explode_argb(color)
+        return imgui.ImColor(r, g, b, a):GetVec4()
+    end
+
+    local render_text = function(text_)
+        for w in text_:gmatch('[^\r\n]+') do
+            local textsize = w:gsub('{.-}', '')
+            local text_width = imgui.CalcTextSize(u8(textsize))
+            imgui.SetCursorPosX( width / 2 - text_width .x / 2 )
+            local text, colors_, m = {}, {}, 1
+            w = w:gsub('{(......)}', '{%1FF}')
+            while w:find('{........}') do
+                local n, k = w:find('{........}')
+                local color = getcolor(w:sub(n + 1, k - 1))
+                if color then
+                    text[#text], text[#text + 1] = w:sub(m, n - 1), w:sub(k + 1, #w)
+                    colors_[#colors_ + 1] = color
+                    m = n
+                end
+                w = w:sub(1, n - 1) .. w:sub(k + 1, #w)
+            end
+            if text[0] then
+                for i = 0, #text do
+                    imgui.TextColored(colors_[i] or colors[1], u8(text[i]))
+                    imgui.SameLine(nil, 0)
+                end
+                imgui.NewLine()
+            else
+                imgui.Text(u8(w))
+            end
+        end
+    end
+    render_text(text)
 end
